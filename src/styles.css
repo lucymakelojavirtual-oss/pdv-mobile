@@ -868,7 +868,8 @@ td:first-child > small { display: block; margin-top: 4px; color: #999e95; font-s
 .storefront-white-label { border-top: 4px solid var(--store-color); }
 .storefront-logo { display: block; margin: 0 0 18px; }
 .storefront-page { position: relative; isolation: isolate; min-height: 100vh; background: #f5f6f1; }
-.storefront-page::before { position: fixed; inset: 0; z-index: -1; background-image: var(--storefront-logo-watermark, none); background-position: center; background-repeat: no-repeat; background-size: min(58vw, 680px) auto; content: ''; opacity: .07; pointer-events: none; mix-blend-mode: multiply; }
+.storefront-page::before { position: fixed; inset: 0; z-index: 0; background-image: var(--storefront-logo-watermark, none); background-position: center; background-repeat: no-repeat; background-size: min(58vw, 680px) auto; content: ''; opacity: .06; pointer-events: none; mix-blend-mode: multiply; }
+.storefront-page > * { position: relative; z-index: 1; }
 .storefront-shell { width: min(100% - 32px, 1100px); margin: 34px auto; padding: 0 18px; border-inline: 3px solid color-mix(in srgb, var(--store-color, #293125) 55%, white); background: color-mix(in srgb, white 84%, transparent); }
 .storefront-heading { padding: 26px; border: 1px solid #e6e9e1; border-top: 4px solid var(--store-color); border-radius: 9px; background: white; }
 .storefront-heading h1 { margin: 0; color: #20241f; font: 700 27px/1.2 'Manrope', sans-serif; }
