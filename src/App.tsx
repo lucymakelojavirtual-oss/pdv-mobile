@@ -3022,8 +3022,7 @@ function StorefrontShop({
   const whatsappHref = `https://wa.me/${whatsappNumber ?? ''}?text=${encodeURIComponent('Olá! Tenho uma dúvida sobre compatibilidade de uma peça.')}`
 
   return <>
-    <header className="storefront-heading storefront-store-header">
-      {store.logo_url && <img className="storefront-header-backdrop" src={store.logo_url} alt="" aria-hidden="true" />}
+    <header className="storefront-heading storefront-store-header" style={{ '--storefront-logo-watermark': store.logo_url ? `url("${store.logo_url}")` : 'none' } as React.CSSProperties}>
       <div className="storefront-brand">
         {store.logo_url && <div className="storefront-logo-frame"><img className="storefront-logo" src={store.logo_url} alt={`Logomarca ${store.name}`} /></div>}
         <div><p className="eyebrow">VITRINE B2C / B2B</p><h1>{store.brand.app_name ?? store.name}</h1><p className="auth-description">{store.brand.tagline || `Vitrine oficial ${store.name}.`}</p></div>
