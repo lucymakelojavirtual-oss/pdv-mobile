@@ -3022,7 +3022,7 @@ function StorefrontShop({
   const whatsappHref = `https://wa.me/${whatsappNumber ?? ''}?text=${encodeURIComponent('Olá! Tenho uma dúvida sobre compatibilidade de uma peça.')}`
 
   return <>
-    <header className="storefront-heading storefront-store-header" style={{ '--storefront-logo-watermark': store.logo_url ? `url("${store.logo_url}")` : 'none' } as React.CSSProperties}>
+    <header className="storefront-heading storefront-store-header">
       <div className="storefront-brand">
         {store.logo_url && <div className="storefront-logo-frame"><img className="storefront-logo" src={store.logo_url} alt={`Logomarca ${store.name}`} /></div>}
         <div><p className="eyebrow">VITRINE B2C / B2B</p><h1>{store.brand.app_name ?? store.name}</h1><p className="auth-description">{store.brand.tagline || `Vitrine oficial ${store.name}.`}</p></div>
@@ -3200,10 +3200,12 @@ function StorefrontPage({ slug }: { slug: string }) {
   useEffect(() => {
     if (store) syncTenantPwaIdentity({ slug: store.slug, name: store.name, logoUrl: store.logo_url, brand: store.brand }, 'storefront')
   }, [store])
-  return <main className="storefront-page" style={storeThemeStyle(store?.brand.primary_color)}>
+  return <main className="storefront-page" style={{
+    ...storeThemeStyle(store?.brand.primary_color),
+    '--storefront-logo-watermark': store?.logo_url && store.brand.show_logo_watermark !== false ? `url("${store.logo_url}")` : 'none',
+  } as React.CSSProperties}>
     {masterViewing && store && <MasterViewingBanner tenantName={store.name} />}
     <section className="storefront-shell">
-      {store?.logo_url && store.brand.show_logo_watermark !== false && <img className="storefront-watermark" src={store.logo_url} alt="" aria-hidden="true" />}
       {error && <section className="storefront-heading"><p className="eyebrow">VITRINE B2C / B2B</p><h1>Vitrine indisponível</h1><p className="auth-description">{error}</p></section>}
       {!store && !error && <section className="storefront-heading"><p className="eyebrow">VITRINE B2C / B2B</p><h1>Carregando vitrine…</h1></section>}
       {store && !error && <StorefrontShop store={store} products={products} catalogLoaded={catalogLoaded} pickupEnabled={pickupEnabled} freeUntilKm={freeUntilKm} masterViewing={masterViewing} />}
