@@ -26,7 +26,9 @@ type Portal = {
 }
 type CatalogProduct = {
   id: string
+  category_id: string | null
   sku: string
+  oem_code: string
   name: string
   description: string | null
   price: number
@@ -41,6 +43,8 @@ type CatalogProduct = {
   compatible_engines: string[]
   is_published: boolean
 }
+type StorefrontProduct = Pick<CatalogProduct, 'id' | 'category_id' | 'sku' | 'oem_code' | 'name' | 'description' | 'price' | 'stock' | 'image_url' | 'compatible_makes' | 'compatible_models' | 'compatible_years' | 'compatible_engines'>
+const STOREFRONT_PRODUCT_FIELDS = 'id, category_id, sku, oem_code, name, description, price, stock, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines'
 type InventoryReceipt = {
   id: string
   product_id: string
@@ -487,8 +491,8 @@ export default function App() {
   if (path === '/cliente' || path === '/cliente/entrar') return <CustomerAccountPage />
   if (path === '/login') return <LoginPage kind="merchant" />
   if (path === '/admin/login') return <LoginPage kind="admin" />
-  const storefrontMatch = path.match(/^\/loja\/([^/]+)$/)
-  if (storefrontMatch) return <StorefrontPage slug={decodeURIComponent(storefrontMatch[1])} />
+  const storefrontMatch = path.match(/^\/loja\/([^/]+)(?:\/produto\/([^/]+))?$/)
+  if (storefrontMatch) return <StorefrontPage slug={decodeURIComponent(storefrontMatch[1])} productId={storefrontMatch[2] ? decodeURIComponent(storefrontMatch[2]) : undefined} />
   const masterStoreViewMatch = path.match(/^\/(app|driver)\/([^/]+)$/)
   if (path === '/admin' || path === '/app' || path === '/entregador' || masterStoreViewMatch) {
     return <ProtectedPage path={path} />
@@ -1008,6 +1012,7 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
   const [products, setProducts] = useState<CatalogProduct[]>([])
   const [editingId, setEditingId] = useState('')
   const [sku, setSku] = useState('')
+  const [oemCode, setOemCode] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('')
@@ -1039,7 +1044,7 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
 
   async function loadProducts() {
     const { data, error: loadError } = await requireSupabase().from('products')
-      .select('id, sku, name, description, price, cost_price, stock, minimum_stock, storage_location, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines, is_published')
+      .select('id, category_id, sku, oem_code, name, description, price, cost_price, stock, minimum_stock, storage_location, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines, is_published')
       .eq('tenant_id', portal.tenantId).order('name')
     if (loadError) throw loadError
     setProducts((data ?? []) as CatalogProduct[])
@@ -1073,6 +1078,7 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
   function editProduct(product: CatalogProduct) {
     setEditingId(product.id)
     setSku(product.sku)
+    setOemCode(product.oem_code ?? '')
     setName(product.name)
     setDescription(product.description ?? '')
     setPrice(String(product.price))
@@ -1093,6 +1099,7 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
   function clearForm() {
     setEditingId('')
     setSku('')
+    setOemCode('')
     setName('')
     setDescription('')
     setPrice('')
@@ -1129,6 +1136,7 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
       const productValues = {
         tenant_id: portal.tenantId,
         sku: sku.trim(),
+        oem_code: oemCode.trim(),
         name: name.trim(),
         description: description.trim() || null,
         price: Number(price),
@@ -1282,6 +1290,7 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
         <label>SKU<input required maxLength={80} value={sku} onChange={(event) => setSku(event.target.value)} /></label>
         <label>Nome da peça<input required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} /></label>
       </div>
+      <label>Código OEM<input maxLength={80} value={oemCode} onChange={(event) => setOemCode(event.target.value)} placeholder="Referência original do fabricante" /></label>
       <label>Descrição<textarea maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
       <div className="auth-form-row">
         <label>Preço de venda (R$)<input type="number" min="0" step="0.01" required value={price} onChange={(event) => setPrice(event.target.value)} /></label>
@@ -1608,7 +1617,7 @@ function TenantBrandSettings({ portal, onSaved }: { portal: Portal; onSaved: (br
           <label className="brand-hex-input">Código hexadecimal<input type="text" value={primaryColor} onChange={(event) => setPrimaryColor(event.target.value)} pattern="^#[0-9A-Fa-f]{6}$" maxLength={7} placeholder="#293125" aria-label="Código hexadecimal da cor principal" disabled={busy} /></label>
         </div>
         <label>Frase da vitrine<input maxLength={120} value={tagline} onChange={(event) => setTagline(event.target.value)} placeholder="Ex.: Peças certas para seu veículo" disabled={busy} /></label>
-        <label className="brand-logo-input">Logomarca (PNG, JPEG ou WebP)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setLogoFile(event.target.files?.[0] ?? null)} disabled={busy} /><small>{logoFile?.name ?? 'O fundo branco conectado às bordas será removido ao enviar a logo.'}</small>{(logoPreview || logoUrl) && <img className="brand-logo-preview" src={logoPreview || logoUrl || ''} alt={`Prévia da logomarca de ${portal.tenantName}`} />}</label>
+        <label className="brand-logo-input">Logomarca (PNG, JPEG ou WebP)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setLogoFile(event.target.files?.[0] ?? null)} disabled={busy} /><small>{logoFile?.name ?? 'O fundo branco conectado às bordas será removido ao enviar a logo.'}</small><small>Ao salvar, os ícones do aplicativo (192 e 512 px) também serão atualizados com a nova logo.</small>{(logoPreview || logoUrl) && <img className="brand-logo-preview" src={logoPreview || logoUrl || ''} alt={`Prévia da logomarca de ${portal.tenantName}`} />}</label>
         <label className="brand-watermark-toggle"><input type="checkbox" checked={showLogoWatermark} onChange={(event) => setShowLogoWatermark(event.target.checked)} disabled={busy || (!logoPreview && !logoUrl)} /><span><b>Aplicar logo como marca-d’água</b><small>Exibe a logo de forma discreta sobre toda a área da vitrine do cliente.</small></span></label>
         <div className="brand-banners">
           <h3>Banners Promocionais da Vitrine</h3>
@@ -2660,6 +2669,32 @@ function CustomerAccountPage() {
   </main>
 }
 
+function productsShareFitment(product: StorefrontProduct, candidate: StorefrontProduct) {
+  const dimensions: [string[], string[]][] = [
+    [product.compatible_makes, candidate.compatible_makes],
+    [product.compatible_models, candidate.compatible_models],
+    [product.compatible_years.map(String), candidate.compatible_years.map(String)],
+  ]
+  const definedDimensions = dimensions.filter(([values]) => values.length > 0)
+  return definedDimensions.length > 0 && definedDimensions.every(([values, candidates]) => {
+    const normalized = new Set(candidates.map((value) => value.toLocaleLowerCase('pt-BR')))
+    return values.some((value) => normalized.has(value.toLocaleLowerCase('pt-BR')))
+  })
+}
+
+function storefrontProductRecommendations(product: StorefrontProduct, products: StorefrontProduct[]) {
+  const alternatives = products.filter((candidate) => candidate.id !== product.id)
+  const equivalents = alternatives.filter((candidate) =>
+    (product.category_id && candidate.category_id === product.category_id)
+    || (product.oem_code.trim() && candidate.oem_code.trim().toLocaleLowerCase('pt-BR') === product.oem_code.trim().toLocaleLowerCase('pt-BR')),
+  ).sort((left, right) => Number(right.stock > 0) - Number(left.stock > 0)).slice(0, 4)
+  const equivalentIds = new Set(equivalents.map((candidate) => candidate.id))
+  const related = alternatives.filter((candidate) =>
+    !equivalentIds.has(candidate.id) && productsShareFitment(product, candidate),
+  ).sort((left, right) => Number(right.stock > 0) - Number(left.stock > 0)).slice(0, 4)
+  return { equivalents, related }
+}
+
 function StorefrontShop({
   store,
   products,
@@ -2667,13 +2702,21 @@ function StorefrontShop({
   pickupEnabled,
   freeUntilKm,
   masterViewing,
+  productId,
+  selectedProduct,
+  productDetailLoading,
+  productDetailError,
 }: {
   store: { id: string; slug: string; name: string; logo_url: string | null; whatsapp: string | null; status: string; brand: { app_name?: string; primary_color?: string; tagline?: string; promotional_banners?: string[] } }
-  products: Pick<CatalogProduct, 'id' | 'sku' | 'name' | 'description' | 'price' | 'stock' | 'image_url' | 'compatible_makes' | 'compatible_models' | 'compatible_years' | 'compatible_engines'>[]
+  products: StorefrontProduct[]
   catalogLoaded: boolean
   pickupEnabled: boolean
   freeUntilKm: number
   masterViewing: boolean
+  productId?: string
+  selectedProduct: StorefrontProduct | null
+  productDetailLoading: boolean
+  productDetailError: string
 }) {
   const cartStorageKey = `vancely-cart-${store.slug}`
   const [cart, setCart] = useState<Record<string, number>>(() => {
@@ -2815,6 +2858,7 @@ function StorefrontShop({
     const yearMatch = !year || product.compatible_years.length === 0 || product.compatible_years.includes(Number(year))
     return (!search.trim() || score > 0) && makeMatch && modelMatch && yearMatch
   }).sort((left, right) => right.score - left.score || left.index - right.index).map(({ product }) => product)
+  const recommendations = selectedProduct ? storefrontProductRecommendations(selectedProduct, products) : { equivalents: [], related: [] }
 
   function updateAddress(field: keyof typeof address, value: string) {
     setAddress((current) => ({ ...current, [field]: value }))
@@ -3039,6 +3083,18 @@ function StorefrontShop({
         <button className="storefront-header-cart" type="button" aria-label={`Abrir carrinho com ${cartCount} ${cartCount === 1 ? 'item' : 'itens'}`} aria-expanded={checkoutOpen} onClick={() => setCheckoutOpen(true)}><ShoppingCart size={21} /><span>Carrinho</span><b>{cartCount}</b></button>
       </nav>
     </header>
+    {productId ? productDetailLoading
+      ? <section className="storefront-product-message"><p className="eyebrow">DETALHES DO PRODUTO</p><h2>Carregando peça…</h2></section>
+      : selectedProduct
+        ? <StorefrontProductDetails
+          store={store}
+          product={selectedProduct}
+          equivalents={recommendations.equivalents}
+          related={recommendations.related}
+          onAdd={() => updateCart(selectedProduct, 1)}
+        />
+        : <section className="storefront-product-message"><p className="eyebrow">DETALHES DO PRODUTO</p><h2>Produto indisponível</h2><p>{productDetailError || 'Não foi possível carregar esta peça.'}</p><a className="auth-button auth-button-secondary" href={`/loja/${encodeURIComponent(store.slug)}`}>Voltar ao catálogo</a></section>
+      : <>
     {store.brand.promotional_banners?.length ? <PromoBannerCarousel banners={store.brand.promotional_banners} /> : <section className="storefront-default-banner" aria-label="Destaque da loja"><span>PEÇAS CERTAS PARA O SEU VEÍCULO</span><h2>{store.brand.tagline || 'Encontre o que seu carro precisa.'}</h2><p>Consulte aplicação, disponibilidade e entrega com a loja.</p></section>}
     {store.status === 'trial' && <p className="storefront-trial-message">Loja em demonstração: você pode explorar o catálogo, mas pedidos e pagamentos ficam disponíveis após a ativação comercial.</p>}
     <section className="storefront-quick-links" aria-label="Atalhos da loja">
@@ -3076,14 +3132,18 @@ function StorefrontShop({
     {filteredProducts.length ? <div id="storefront-products" className="storefront-products">{filteredProducts.map((product) => {
       const quantity = cart[product.id] ?? 0
       return <article key={product.id}>
-        {product.image_url ? <img src={product.image_url} alt="" /> : <div className="storefront-product-placeholder"><Package size={24} /></div>}
-        <div><h3>{product.name}</h3>{product.description && <p>{product.description}</p>}{productFitment(product) && <small className="storefront-fitment">{productFitment(product)}</small>}<b>{money(Number(product.price))}</b><small>{product.stock > 0 ? `${product.stock} em estoque` : 'Sem estoque disponível'}</small>
+        <a className="storefront-product-detail-link" href={`/loja/${encodeURIComponent(store.slug)}/produto/${encodeURIComponent(product.id)}`} aria-label={`Ver detalhes de ${product.name}`}>
+          {product.image_url ? <img src={product.image_url} alt="" /> : <div className="storefront-product-placeholder"><Package size={24} /></div>}
+          <div className="storefront-product-card-copy"><h3>{product.name}</h3>{product.description && <p>{product.description}</p>}{productFitment(product) && <small className="storefront-fitment">{productFitment(product)}</small>}<b>{money(Number(product.price))}</b><small>{product.stock > 0 ? `${product.stock} em estoque` : 'Sem estoque disponível'}</small><span className="storefront-product-details-action">Ver detalhes <ArrowRight size={13} /></span></div>
+        </a>
+        <div className="storefront-product-actions">
           {quantity === 0 ? <button className="auth-button auth-button-primary storefront-add-button" type="button" disabled={product.stock <= 0 && store.status !== 'trial'} onClick={() => updateCart(product, 1)}><ShoppingCart size={15} /> {product.stock > 0 ? 'Adicionar ao carrinho' : store.status === 'trial' ? 'Adicionar à prévia' : 'Produto esgotado'}</button> : <div className="storefront-quantity"><button type="button" aria-label={`Remover uma unidade de ${product.name}`} onClick={() => updateCart(product, -1)}><Minus size={14} /></button><b>{quantity}</b><button type="button" aria-label={`Adicionar uma unidade de ${product.name}`} disabled={quantity >= Math.max(product.stock, store.status === 'trial' ? 1 : 0)} onClick={() => updateCart(product, 1)}><Plus size={14} /></button></div>}
         </div>
       </article>
     })}</div> : <p className="storefront-empty-state">{!catalogLoaded ? 'Carregando produtos da loja…' : search.trim() ? `Não encontramos peças parecidas com “${search}”. Tente menos palavras ou confira a escrita.` : 'Nenhuma peça encontrada para esses filtros. Ajuste a busca ou pesquise pelo modelo.'}</p>}
 
     </section>
+  </>}
     {checkoutOpen && <div className="storefront-drawer-backdrop" onClick={() => setCheckoutOpen(false)}>
     <aside className="storefront-checkout storefront-cart-drawer" role="dialog" aria-modal="true" aria-label="Carrinho e finalização da compra" onClick={(event) => event.stopPropagation()}>
       <div className="portal-panel-heading"><div><p className="eyebrow">SEU PEDIDO</p><h2><ShoppingCart size={17} /> Carrinho e entrega</h2></div><button className="icon-button" type="button" aria-label="Fechar carrinho" onClick={() => setCheckoutOpen(false)}><X size={18} /></button></div>
@@ -3129,7 +3189,50 @@ function StorefrontShop({
   </>
 }
 
-function StorefrontPage({ slug }: { slug: string }) {
+function StorefrontRecommendationSection({ title, products, storeSlug, emptyMessage }: { title: string; products: StorefrontProduct[]; storeSlug: string; emptyMessage: string }) {
+  return <section className="storefront-recommendations">
+    <div className="storefront-recommendations-heading"><p className="eyebrow">PARA ESTA PEÇA</p><h2>{title}</h2></div>
+    {products.length ? <div className="storefront-recommendation-grid">{products.map((product) => <a key={product.id} href={`/loja/${encodeURIComponent(storeSlug)}/produto/${encodeURIComponent(product.id)}`}>
+      {product.image_url ? <img src={product.image_url} alt="" /> : <span className="storefront-recommendation-placeholder"><Package size={20} /></span>}
+      <span className="storefront-recommendation-copy"><b>{product.name}</b><small>SKU {product.sku}</small><strong>{money(Number(product.price))}</strong><small>{product.stock > 0 ? `${product.stock} em estoque` : 'Sem estoque disponível'}</small></span>
+    </a>)}</div> : <p className="storefront-recommendations-empty">{emptyMessage}</p>}
+  </section>
+}
+
+function StorefrontProductDetails({ store, product, equivalents, related, onAdd }: {
+  store: { slug: string; status: string }
+  product: StorefrontProduct
+  equivalents: StorefrontProduct[]
+  related: StorefrontProduct[]
+  onAdd: () => void
+}) {
+  const fitmentRows = [
+    ['Marca', product.compatible_makes.join(', ')],
+    ['Modelo', product.compatible_models.join(', ')],
+    ['Anos', product.compatible_years.join(', ')],
+    ['Motor', product.compatible_engines.join(', ')],
+  ] as const
+  return <>
+    <a className="storefront-product-back" href={`/loja/${encodeURIComponent(store.slug)}`}><ArrowLeft size={15} /> Voltar ao catálogo</a>
+    <section className="storefront-product-detail">
+      <div className="storefront-product-detail-image">{product.image_url ? <img src={product.image_url} alt={product.name} /> : <Package size={44} />}</div>
+      <div className="storefront-product-detail-copy">
+        <p className="eyebrow">PEÇA · SKU {product.sku}</p>
+        <h2>{product.name}</h2>
+        {product.description && <p className="storefront-product-description">{product.description}</p>}
+        <dl className="storefront-product-codes"><div><dt>SKU</dt><dd>{product.sku}</dd></div><div><dt>Código OEM</dt><dd>{product.oem_code || 'Não informado'}</dd></div></dl>
+        <p className="storefront-product-detail-price">{money(Number(product.price))}</p>
+        <p className={`storefront-product-stock ${product.stock > 0 ? 'is-available' : 'is-unavailable'}`}>{product.stock > 0 ? `${product.stock} unidade(s) disponível(is)` : 'Sem estoque disponível'}</p>
+        <button className="auth-button auth-button-primary storefront-product-detail-add" type="button" disabled={product.stock <= 0 && store.status !== 'trial'} onClick={onAdd}><ShoppingCart size={16} /> {product.stock > 0 ? 'Adicionar ao carrinho' : store.status === 'trial' ? 'Adicionar à prévia' : 'Produto esgotado'}</button>
+        <section className="storefront-product-fitment"><h3>Aplicação veicular</h3><dl>{fitmentRows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || 'Não informado'}</dd></div>)}</dl></section>
+      </div>
+    </section>
+    <StorefrontRecommendationSection title="Peças equivalentes e similares" products={equivalents} storeSlug={store.slug} emptyMessage="Ainda não há equivalentes por OEM ou categoria cadastrados para esta peça." />
+    <StorefrontRecommendationSection title="Sugestões para a mesma aplicação" products={related} storeSlug={store.slug} emptyMessage="Não encontramos outras peças com a mesma aplicação cadastrada." />
+  </>
+}
+
+function StorefrontPage({ slug, productId }: { slug: string; productId?: string }) {
   const [store, setStore] = useState<{
     id: string
     slug: string
@@ -3139,7 +3242,10 @@ function StorefrontPage({ slug }: { slug: string }) {
     status: string
     brand: { app_name?: string; primary_color?: string; tagline?: string; promotional_banners?: string[]; show_logo_watermark?: boolean; app_icon_192_url?: string; app_icon_512_url?: string }
   } | null>(null)
-  const [products, setProducts] = useState<Pick<CatalogProduct, 'id' | 'sku' | 'name' | 'description' | 'price' | 'stock' | 'image_url' | 'compatible_makes' | 'compatible_models' | 'compatible_years' | 'compatible_engines'>[]>([])
+  const [products, setProducts] = useState<StorefrontProduct[]>([])
+  const [selectedProduct, setSelectedProduct] = useState<StorefrontProduct | null>(null)
+  const [productDetailLoading, setProductDetailLoading] = useState(false)
+  const [productDetailError, setProductDetailError] = useState('')
   const [catalogLoaded, setCatalogLoaded] = useState(false)
   const [pickupEnabled, setPickupEnabled] = useState(false)
   const [freeUntilKm, setFreeUntilKm] = useState(0)
@@ -3169,7 +3275,7 @@ function StorefrontPage({ slug }: { slug: string }) {
         if (currentStore) {
           const [{ data: catalog, error: catalogError }, { data: shippingRules, error: shippingError }] = await Promise.all([
             client.from('products')
-            .select('id, sku, name, description, price, stock, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines')
+            .select(STOREFRONT_PRODUCT_FIELDS)
             .eq('tenant_id', currentStore.id)
             .eq('is_published', true)
             .order('name'),
@@ -3179,7 +3285,7 @@ function StorefrontPage({ slug }: { slug: string }) {
           if (catalogError) throw catalogError
           if (shippingError) throw shippingError
           if (active) {
-            setProducts((catalog ?? []) as typeof products)
+            setProducts((catalog ?? []) as StorefrontProduct[])
             setCatalogLoaded(true)
             setPickupEnabled(Boolean(shippingRules?.pickup_enabled))
             setFreeUntilKm(Number(shippingRules?.free_until_km ?? 0))
@@ -3198,6 +3304,36 @@ function StorefrontPage({ slug }: { slug: string }) {
     return () => { active = false }
   }, [slug])
   useEffect(() => {
+    if (!store || !productId) {
+      setSelectedProduct(null)
+      setProductDetailError('')
+      setProductDetailLoading(false)
+      return
+    }
+    let active = true
+    setSelectedProduct(null)
+    setProductDetailError('')
+    setProductDetailLoading(true)
+    void (async () => {
+      try {
+        const { data, error: detailError } = await requireSupabase().from('products')
+          .select(STOREFRONT_PRODUCT_FIELDS)
+          .eq('tenant_id', store.id)
+          .eq('id', productId)
+          .eq('is_published', true)
+          .maybeSingle()
+        if (detailError) throw detailError
+        if (!data) throw new Error('Este produto não está disponível nesta vitrine.')
+        if (active) setSelectedProduct(data as StorefrontProduct)
+      } catch (reason) {
+        if (active) setProductDetailError(errorText(reason))
+      } finally {
+        if (active) setProductDetailLoading(false)
+      }
+    })()
+    return () => { active = false }
+  }, [productId, store?.id])
+  useEffect(() => {
     if (store) syncTenantPwaIdentity({ slug: store.slug, name: store.name, logoUrl: store.logo_url, brand: store.brand }, 'storefront')
   }, [store])
   return <main className="storefront-page" style={{
@@ -3208,7 +3344,7 @@ function StorefrontPage({ slug }: { slug: string }) {
     <section className="storefront-shell">
       {error && <section className="storefront-heading"><p className="eyebrow">VITRINE B2C / B2B</p><h1>Vitrine indisponível</h1><p className="auth-description">{error}</p></section>}
       {!store && !error && <section className="storefront-heading"><p className="eyebrow">VITRINE B2C / B2B</p><h1>Carregando vitrine…</h1></section>}
-      {store && !error && <StorefrontShop store={store} products={products} catalogLoaded={catalogLoaded} pickupEnabled={pickupEnabled} freeUntilKm={freeUntilKm} masterViewing={masterViewing} />}
+      {store && !error && <StorefrontShop store={store} products={products} catalogLoaded={catalogLoaded} pickupEnabled={pickupEnabled} freeUntilKm={freeUntilKm} masterViewing={masterViewing} productId={productId} selectedProduct={selectedProduct} productDetailLoading={productDetailLoading} productDetailError={productDetailError} />}
     </section>
   </main>
 }
