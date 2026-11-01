@@ -733,10 +733,33 @@ td:first-child > small { display: block; margin-top: 4px; color: #999e95; font-s
 .merchant-overview-cards article { min-width: 0; }
 .merchant-overview-cards article > .auth-button { min-height: 34px; }
 .merchant-pwa-panel { margin-top: 0; }
+.merchant-sales-overview { display: grid; gap: 14px; margin: 0; background: color-mix(in srgb, white 94%, transparent); }
+.merchant-sales-overview > .portal-panel-heading { align-items: flex-start; margin: 0; }
+.merchant-sales-overview > .portal-panel-heading h2 { display: flex; align-items: center; gap: 7px; color: var(--store-color, #293125); }
+.merchant-sales-legend { display: flex; flex-wrap: wrap; gap: 10px; color: #70786c; font-size: 9px; }
+.merchant-sales-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.merchant-sales-legend i { width: 8px; height: 8px; border-radius: 2px; background: #587523; }
+.merchant-sales-legend i.is-pending { background: #d7a348; }
+.merchant-sales-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.merchant-sales-metrics article { min-width: 0; display: grid; gap: 5px; padding: 11px 12px; border: 1px solid #e8ebe4; border-radius: 6px; background: rgba(255,255,255,.92); }
+.merchant-sales-metrics small { color: #747c70; font-size: 9px; }
+.merchant-sales-metrics b { overflow-wrap: anywhere; color: var(--store-color, #293125); font: 700 16px 'Manrope', sans-serif; }
+.merchant-sales-chart { height: 154px; display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); align-items: stretch; gap: 4px; padding-top: 8px; border-bottom: 1px solid #e8ebe4; }
+.merchant-sales-day { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 5px; padding: 3px 1px 0; border: 0; border-radius: 4px 4px 0 0; background: transparent; cursor: pointer; }
+.merchant-sales-day:hover, .merchant-sales-day.is-selected { background: #f2f5ec; }
+.merchant-sales-bar { width: 100%; height: 116px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+.merchant-sales-bar i { width: min(62%, 20px); min-height: 0; background: #587523; }
+.merchant-sales-bar i.is-pending { background: #d7a348; }
+.merchant-sales-day small { color: #798073; font-size: 8px; white-space: nowrap; }
+.merchant-sales-selected { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 15px; margin: 0; color: #72796d; font-size: 9px; }
+.merchant-sales-selected b { color: #343a32; text-transform: capitalize; }
 @media (max-width: 680px) {
   .merchant-overview-cards { grid-template-columns: minmax(0, 1fr); }
   .merchant-section-tabs { top: 0; margin-top: 14px; }
   .merchant-section-tabs button { padding: 0 10px; }
+  .merchant-sales-overview > .portal-panel-heading { flex-direction: column; }
+  .merchant-sales-metrics { grid-template-columns: minmax(0, 1fr); }
+  .merchant-sales-chart { gap: 1px; }
 }
 .tenant-list h2 { margin-top: 0; }
 .tenant-row { display: block; padding: 0; }

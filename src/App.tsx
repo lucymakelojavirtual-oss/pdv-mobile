@@ -97,6 +97,13 @@ type TenantCreditStatus = {
   plates: { monthly_limit: number; monthly_used: number; addon_balance: number }
   nfe: { monthly_limit: number; monthly_used: number; addon_balance: number }
 }
+type TenantSalesAnalyticsDay = {
+  sales_date: string
+  paid_revenue: number | string
+  pending_revenue: number | string
+  paid_orders: number | string
+  pending_orders: number | string
+}
 type DeliveryQuote = {
   distance_meters: number
   duration_seconds: number
@@ -897,6 +904,7 @@ function MerchantPortal({ user, portal, onLogout, masterPreview = false }: { use
         </nav>
         <section className="merchant-section-content" id={`merchant-panel-${activeSection}`} role="tabpanel" aria-labelledby={`merchant-tab-${activeSection}`}>
           {activeSection === 'overview' && <>
+            <MerchantSalesOverview portal={currentPortal} />
             <div className="portal-cards merchant-overview-cards">
               <article><Store size={20} /><h2>Dados da loja</h2>{currentPortal.logoUrl && <img className="tenant-logo-preview" src={currentPortal.logoUrl} alt={`Logomarca ${currentPortal.tenantName}`} />}<p>Vitrine: <a href={`/loja/${currentPortal.slug}`} target="_blank" rel="noreferrer">/loja/{currentPortal.slug}</a></p><a className="auth-button auth-button-secondary" href={`/loja/${currentPortal.slug}`} target="_blank" rel="noreferrer">Abrir vitrine</a></article>
               <article><LifeBuoy size={20} /><h2>Suporte</h2><p>Triagem inicial e atendimento humano pela central Vancely.</p><button className="auth-button auth-button-secondary" onClick={() => setSupportOpen(true)}>Abrir suporte</button></article>
@@ -926,6 +934,67 @@ function MerchantPortal({ user, portal, onLogout, masterPreview = false }: { use
       {supportOpen && <SupportDialog user={user} tenantId={currentPortal.tenantId} onClose={() => setSupportOpen(false)} />}
     </main>
   )
+}
+
+function MerchantSalesOverview({ portal }: { portal: Portal }) {
+  const [days, setDays] = useState<TenantSalesAnalyticsDay[]>([])
+  const [selectedDate, setSelectedDate] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      try {
+        const { data, error: analyticsError } = await requireSupabase().rpc('get_tenant_sales_analytics', {
+          p_tenant_id: portal.tenantId,
+          p_days: 14,
+        })
+        if (analyticsError) throw analyticsError
+        if (!active) return
+        const rows = (data ?? []) as TenantSalesAnalyticsDay[]
+        setDays(rows)
+        setSelectedDate((current) => current && rows.some((day) => day.sales_date === current) ? current : rows.at(-1)?.sales_date ?? '')
+      } catch (reason) {
+        if (active) setError(errorText(reason))
+      } finally {
+        if (active) setLoading(false)
+      }
+    })()
+    return () => { active = false }
+  }, [portal.tenantId])
+
+  const paidRevenue = days.reduce((total, day) => total + Number(day.paid_revenue), 0)
+  const pendingRevenue = days.reduce((total, day) => total + Number(day.pending_revenue), 0)
+  const paidOrders = days.reduce((total, day) => total + Number(day.paid_orders), 0)
+  const chartMax = Math.max(1, ...days.map((day) => Number(day.paid_revenue) + Number(day.pending_revenue)))
+  const selectedDay = days.find((day) => day.sales_date === selectedDate)
+
+  return <section className="portal-panel merchant-sales-overview">
+    <div className="portal-panel-heading"><div><p className="eyebrow">ÚLTIMOS 14 DIAS</p><h2><ChartNoAxesCombined size={17} /> Vendas e faturamento</h2></div><div className="merchant-sales-legend"><span><i className="is-paid" /> Pago</span><span><i className="is-pending" /> Pendente</span></div></div>
+    {error ? <p className="form-message form-error" role="alert">{error}</p> : <>
+      <div className="merchant-sales-metrics">
+        <article><small>Faturamento pago</small><b>{loading ? '…' : money(paidRevenue)}</b></article>
+        <article><small>Pedidos pagos</small><b>{loading ? '…' : paidOrders}</b></article>
+        <article><small>Aguardando pagamento</small><b>{loading ? '…' : money(pendingRevenue)}</b></article>
+      </div>
+      {!loading && <>
+        <div className="merchant-sales-chart" role="group" aria-label="Faturamento diário dos últimos 14 dias">
+          {days.map((day) => {
+            const paid = Number(day.paid_revenue)
+            const pending = Number(day.pending_revenue)
+            const dateLabel = new Date(`${day.sales_date}T12:00:00Z`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', timeZone: 'UTC' })
+            const paidHeight = paid === 0 ? 0 : Math.max(2, paid / chartMax * 100)
+            const pendingHeight = pending === 0 ? 0 : Math.max(2, pending / chartMax * 100)
+            return <button key={day.sales_date} type="button" className={`merchant-sales-day${selectedDate === day.sales_date ? ' is-selected' : ''}`} aria-pressed={selectedDate === day.sales_date} aria-label={`${dateLabel}: pago ${money(paid)}, pendente ${money(pending)}`} title={`${dateLabel}: pago ${money(paid)} · pendente ${money(pending)}`} onClick={() => setSelectedDate(day.sales_date)}>
+              <span className="merchant-sales-bar"><i className="is-paid" style={{ height: `${paidHeight}%` }} /><i className="is-pending" style={{ height: `${pendingHeight}%` }} /></span><small>{dateLabel.slice(0, 2)}</small>
+            </button>
+          })}
+        </div>
+        {selectedDay && <p className="merchant-sales-selected"><b>{new Date(`${selectedDay.sales_date}T12:00:00Z`).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', timeZone: 'UTC' })}</b><span>Pago {money(Number(selectedDay.paid_revenue))}</span><span>Pendente {money(Number(selectedDay.pending_revenue))}</span><span>{Number(selectedDay.paid_orders)} pedido(s) pago(s)</span></p>}
+      </>}
+    </>}
+  </section>
 }
 
 function TeamManagementPanel({ portal }: { portal: Portal }) {
