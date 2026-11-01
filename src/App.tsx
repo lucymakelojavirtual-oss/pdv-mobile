@@ -867,8 +867,20 @@ function SellerPortal({ user, portal, onLogout }: { user: User; portal: Portal; 
 function MerchantPortal({ user, portal, onLogout, masterPreview = false }: { user: User; portal: Portal; onLogout: () => void; masterPreview?: boolean }) {
   const [currentPortal, setCurrentPortal] = useState(portal)
   const [supportOpen, setSupportOpen] = useState(false)
+  const [activeSection, setActiveSection] = useState<'overview' | 'orders' | 'catalog' | 'team' | 'delivery' | 'finance' | 'appearance'>('overview')
   const isStoreTeam = portal.role !== 'courier'
   const canManageSettings = masterPreview || ['owner', 'admin', 'manager'].includes(portal.role)
+  const merchantSections = [
+    { id: 'overview' as const, label: 'Visão geral', icon: Store },
+    ...(isStoreTeam && !masterPreview ? [{ id: 'orders' as const, label: 'Pedidos', icon: PackageCheck }] : []),
+    ...(isStoreTeam ? [{ id: 'catalog' as const, label: 'Catálogo', icon: Package }] : []),
+    ...(canManageSettings ? [
+      { id: 'team' as const, label: 'Equipe e acesso', icon: UserRound },
+      { id: 'delivery' as const, label: 'Entrega', icon: MapPin },
+      { id: 'finance' as const, label: 'Financeiro', icon: Wallet },
+      { id: 'appearance' as const, label: 'Aparência', icon: Palette },
+    ] : []),
+  ]
   useEffect(() => {
     syncTenantPwaIdentity(currentPortal, 'merchant')
   }, [currentPortal])
@@ -879,31 +891,35 @@ function MerchantPortal({ user, portal, onLogout, masterPreview = false }: { use
       <section className="portal-content" style={{ '--store-color': currentPortal.brand.primary_color ?? '#293125' } as React.CSSProperties}>
         <p className="eyebrow">AMBIENTE DA LOJA · {portal.role.toUpperCase()}</p>
         <h1>Bem-vindo à {currentPortal.tenantName}</h1>
-        <p className="auth-description">{masterPreview ? 'Sessão Admin Master com visualização e gestão autorizadas desta loja.' : 'O acesso está autenticado e isolado para esta loja.'} Catálogo, frete e saldos são exibidos conforme seu perfil; integrações operacionais dependem das APIs de produção.</p>
-        <div className="portal-cards">
-          <article><Store size={20} /><h2>Dados da loja</h2>{currentPortal.logoUrl && <img className="tenant-logo-preview" src={currentPortal.logoUrl} alt={`Logomarca ${currentPortal.tenantName}`} />}<p>Vitrine: <a href={`/loja/${currentPortal.slug}`} target="_blank" rel="noreferrer">/loja/{currentPortal.slug}</a></p></article>
-          <article><LifeBuoy size={20} /><h2>Suporte</h2><p>Triagem inicial e atendimento humano pela central Vancely.</p><button className="auth-button auth-button-secondary" onClick={() => setSupportOpen(true)}>Abrir suporte</button></article>
-          <article><LockKeyhole size={20} /><h2>Integrações</h2><p>Catálogo, pedidos, faturamento e entregas aguardam configuração das APIs correspondentes.</p></article>
-        </div>
-        <section className="portal-panel">
-          <div className="portal-panel-heading"><div><p className="eyebrow">APLICATIVOS DA LOJA</p><h2>Experiências PWA</h2></div><span>Disponíveis na estrutura atual</span></div>
-          <div className="pwa-links">
-            <a href={masterPreview ? `/app/${encodeURIComponent(currentPortal.slug)}` : '/app'}><Store size={17} /><span><b>Painel lojista</b><small>{masterPreview ? `/app/${currentPortal.slug}` : '/app · gestão completa'}</small></span></a>
-            {!masterPreview && <a href="/vendedor"><UserRound size={17} /><span><b>Painel vendedor</b><small>/vendedor · catálogo com PIN para exclusão</small></span></a>}
-            <a href={masterPreview ? `/driver/${encodeURIComponent(currentPortal.slug)}` : '/entregador'}><Bike size={17} /><span><b>Motoboy</b><small>{masterPreview ? `/driver/${currentPortal.slug}` : '/entregador · acesso por perfil'}</small></span></a>
-            <a href={`/loja/${currentPortal.slug}`} target="_blank" rel="noreferrer"><Store size={17} /><span><b>Cliente</b><small>/loja/{currentPortal.slug}</small></span></a>
-          </div>
+        <p className="auth-description">{masterPreview ? 'Sessão Admin Master com acesso autorizado.' : 'Acesso isolado para esta loja.'} Escolha uma área para continuar.</p>
+        <nav className="merchant-section-tabs" role="tablist" aria-label="Áreas do painel">
+          {merchantSections.map(({ id, label, icon: Icon }) => <button key={id} id={`merchant-tab-${id}`} type="button" role="tab" aria-selected={activeSection === id} aria-controls={`merchant-panel-${id}`} onClick={() => setActiveSection(id)}><Icon size={16} /><span>{label}</span></button>)}
+        </nav>
+        <section className="merchant-section-content" id={`merchant-panel-${activeSection}`} role="tabpanel" aria-labelledby={`merchant-tab-${activeSection}`}>
+          {activeSection === 'overview' && <>
+            <div className="portal-cards merchant-overview-cards">
+              <article><Store size={20} /><h2>Dados da loja</h2>{currentPortal.logoUrl && <img className="tenant-logo-preview" src={currentPortal.logoUrl} alt={`Logomarca ${currentPortal.tenantName}`} />}<p>Vitrine: <a href={`/loja/${currentPortal.slug}`} target="_blank" rel="noreferrer">/loja/{currentPortal.slug}</a></p><a className="auth-button auth-button-secondary" href={`/loja/${currentPortal.slug}`} target="_blank" rel="noreferrer">Abrir vitrine</a></article>
+              <article><LifeBuoy size={20} /><h2>Suporte</h2><p>Triagem inicial e atendimento humano pela central Vancely.</p><button className="auth-button auth-button-secondary" onClick={() => setSupportOpen(true)}>Abrir suporte</button></article>
+            </div>
+            <section className="portal-panel merchant-pwa-panel">
+              <div className="portal-panel-heading"><div><p className="eyebrow">APLICATIVOS DA LOJA</p><h2>Atalhos rápidos</h2></div></div>
+              <div className="pwa-links">
+                <a href={masterPreview ? `/app/${encodeURIComponent(currentPortal.slug)}` : '/app'}><Store size={17} /><span><b>Painel lojista</b><small>{masterPreview ? `/app/${currentPortal.slug}` : 'Gestão completa'}</small></span></a>
+                {!masterPreview && <a href="/vendedor"><UserRound size={17} /><span><b>Painel vendedor</b><small>Catálogo e pedidos</small></span></a>}
+                <a href={masterPreview ? `/driver/${encodeURIComponent(currentPortal.slug)}` : '/entregador'}><Bike size={17} /><span><b>Motoboy</b><small>Rotas e entregas</small></span></a>
+                <a href={`/loja/${currentPortal.slug}`} target="_blank" rel="noreferrer"><Store size={17} /><span><b>Cliente</b><small>Vitrine pública</small></span></a>
+              </div>
+            </section>
+          </>}
+          {activeSection === 'orders' && isStoreTeam && !masterPreview && <StoreOrderWorkflowPanel portal={currentPortal} />}
+          {activeSection === 'catalog' && isStoreTeam && <ProductCatalogManager portal={currentPortal} role={portal.role} />}
+          {activeSection === 'team' && canManageSettings && !masterPreview && <><TeamManagementPanel portal={currentPortal} /><TenantProductDeletePinPanel portal={currentPortal} /></>}
+          {activeSection === 'delivery' && canManageSettings && <ShippingSettings portal={currentPortal} />}
+          {activeSection === 'finance' && canManageSettings && <><TenantAsaasSettings portal={currentPortal} />{!masterPreview && <TenantCreditPanel portal={currentPortal} />}</>}
+          {activeSection === 'appearance' && canManageSettings && <TenantBrandSettings portal={currentPortal} onSaved={(brand, logoUrl) => {
+            setCurrentPortal((current) => ({ ...current, brand, logoUrl }))
+          }} />}
         </section>
-        {canManageSettings && <TeamManagementPanel portal={currentPortal} />}
-        {canManageSettings && <TenantProductDeletePinPanel portal={currentPortal} />}
-        {isStoreTeam && <ProductCatalogManager portal={currentPortal} role={portal.role} />}
-        {isStoreTeam && !masterPreview && <StoreOrderWorkflowPanel portal={currentPortal} />}
-        {isStoreTeam && !masterPreview && <TenantCreditPanel portal={currentPortal} />}
-        {canManageSettings && <ShippingSettings portal={currentPortal} />}
-        {canManageSettings && <TenantAsaasSettings portal={currentPortal} />}
-        {canManageSettings && <TenantBrandSettings portal={currentPortal} onSaved={(brand, logoUrl) => {
-          setCurrentPortal((current) => ({ ...current, brand, logoUrl }))
-        }} />}
       </section>
       {supportOpen && <SupportDialog user={user} tenantId={currentPortal.tenantId} onClose={() => setSupportOpen(false)} />}
     </main>

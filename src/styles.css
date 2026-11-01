@@ -724,6 +724,20 @@ td:first-child > small { display: block; margin-top: 4px; color: #999e95; font-s
 .portal-cards h2, .tenant-list h2 { margin: 13px 0 8px; font: 700 15px 'Manrope', sans-serif; }
 .portal-cards p { min-height: 39px; color: #7c8377; font-size: 12px; line-height: 1.6; }
 .portal-cards p a { color: #5f7d28; overflow-wrap: anywhere; }
+.merchant-section-tabs { position: sticky; top: 0; z-index: 4; display: flex; gap: 5px; margin: 22px 0 16px; padding: 6px; overflow-x: auto; border: 1px solid #e6e9e1; border-radius: 7px; background: rgba(255,255,255,.96); box-shadow: 0 3px 12px rgba(32,36,31,.06); scrollbar-width: thin; }
+.merchant-section-tabs button { min-height: 38px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: #687064; font: 600 10px 'Manrope', sans-serif; cursor: pointer; }
+.merchant-section-tabs button:hover { background: #f3f5ef; color: var(--store-color, #293125); }
+.merchant-section-tabs button[aria-selected="true"] { background: var(--store-color, #293125); color: white; }
+.merchant-section-content { min-width: 0; display: grid; align-content: start; gap: 15px; }
+.merchant-overview-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.merchant-overview-cards article { min-width: 0; }
+.merchant-overview-cards article > .auth-button { min-height: 34px; }
+.merchant-pwa-panel { margin-top: 0; }
+@media (max-width: 680px) {
+  .merchant-overview-cards { grid-template-columns: minmax(0, 1fr); }
+  .merchant-section-tabs { top: 0; margin-top: 14px; }
+  .merchant-section-tabs button { padding: 0 10px; }
+}
 .tenant-list h2 { margin-top: 0; }
 .tenant-row { display: block; padding: 0; }
 .tenant-row > div { display: grid; gap: 4px; }
