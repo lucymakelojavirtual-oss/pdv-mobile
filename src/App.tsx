@@ -913,7 +913,9 @@ function MerchantPortal({ user, portal, onLogout, masterPreview = false }: { use
           </>}
           {activeSection === 'orders' && isStoreTeam && !masterPreview && <StoreOrderWorkflowPanel portal={currentPortal} />}
           {activeSection === 'catalog' && isStoreTeam && <ProductCatalogManager portal={currentPortal} role={portal.role} />}
-          {activeSection === 'team' && canManageSettings && !masterPreview && <><TeamManagementPanel portal={currentPortal} /><TenantProductDeletePinPanel portal={currentPortal} /></>}
+          {activeSection === 'team' && canManageSettings && (masterPreview
+            ? <section className="portal-panel team-preview-notice"><div className="portal-panel-heading"><div><p className="eyebrow">EQUIPE E ACESSO</p><h2><LockKeyhole size={17} /> Área do proprietário</h2></div></div><p className="auth-description">Convites de vendedores/entregadores e o PIN de exclusão são configurados no login real do proprietário da loja. Esta prévia Admin Master não cria contas nem altera credenciais.</p></section>
+            : <><TeamManagementPanel portal={currentPortal} /><TenantProductDeletePinPanel portal={currentPortal} /></>)}
           {activeSection === 'delivery' && canManageSettings && <ShippingSettings portal={currentPortal} />}
           {activeSection === 'finance' && canManageSettings && <><TenantAsaasSettings portal={currentPortal} />{!masterPreview && <TenantCreditPanel portal={currentPortal} />}</>}
           {activeSection === 'appearance' && canManageSettings && <TenantBrandSettings portal={currentPortal} onSaved={(brand, logoUrl) => {
