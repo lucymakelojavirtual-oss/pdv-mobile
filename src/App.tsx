@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { ArrowLeft, ArrowRight, Banknote, Bike, Camera, CarFront, ChartNoAxesCombined, CircleCheck, CreditCard, ExternalLink, Flame, LifeBuoy, LockKeyhole, MapPin, MessageCircle, Minus, Navigation, Package, PackageCheck, Palette, PanelsTopLeft, Plus, RefreshCw, Search, Send, ShieldCheck, ShoppingCart, Store, Trash2, Upload, UserRound, Wallet, X, Zap } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Banknote, Bike, Camera, CarFront, ChartNoAxesCombined, CircleCheck, ExternalLink, LifeBuoy, LockKeyhole, MapPin, MessageCircle, Minus, Navigation, Package, PackageCheck, Palette, PanelsTopLeft, Plus, RefreshCw, Search, Send, ShoppingCart, Store, Trash2, Upload, UserRound, Wallet, X } from 'lucide-react'
 import { requireSupabase } from './services/supabase'
 import RouteMap from './components/RouteMap'
 
@@ -1658,6 +1658,8 @@ type CourierDeliveryOrder = {
   subtotal: number
   shipping_amount: number
   total: number
+  delivery_route_geometry: { type: 'LineString'; coordinates: [number, number][] } | null
+  delivery_eta_seconds: number | null
   delivery_address: Record<string, unknown> | null
   customer_snapshot: Record<string, unknown>
   courier_id: string | null
@@ -1665,6 +1667,22 @@ type CourierDeliveryOrder = {
   created_at: string
   order_items: { product_name: string; sku: string; quantity: number }[]
 }
+
+const COURIER_DEMO_ORDER_ID = 'admin-preview-order'
+const COURIER_DEMO_ROUTE = {
+  type: 'LineString' as const,
+  coordinates: [
+    [-60.0255, -3.0992], [-60.0238, -3.1011], [-60.0217, -3.1038],
+    [-60.0193, -3.1061], [-60.0171, -3.1088], [-60.0148, -3.1112],
+  ] as [number, number][],
+}
+const COURIER_DEMO_POSITIONS: LiveCourierPosition[] = [
+  { latitude: -3.0992, longitude: -60.0255, heading: 140, recorded_at: '' },
+  { latitude: -3.1011, longitude: -60.0238, heading: 140, recorded_at: '' },
+  { latitude: -3.1038, longitude: -60.0217, heading: 140, recorded_at: '' },
+  { latitude: -3.1061, longitude: -60.0193, heading: 140, recorded_at: '' },
+  { latitude: -3.1088, longitude: -60.0171, heading: 140, recorded_at: '' },
+]
 
 function courierAddressLabel(address: Record<string, unknown> | null) {
   if (!address) return 'Endereço não informado'
@@ -1695,10 +1713,14 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
   const [collectionMethod, setCollectionMethod] = useState<'' | 'cash' | 'card' | 'pix'>('')
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [trackingOrderId, setTrackingOrderId] = useState('')
+  const [demoStage, setDemoStage] = useState<'ready' | 'in_transit' | 'delivered'>('ready')
+  const [demoPosition, setDemoPosition] = useState<LiveCourierPosition | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const locationWatchRef = useRef<number | null>(null)
   const locationIntervalRef = useRef<number | null>(null)
+  const demoIntervalRef = useRef<number | null>(null)
+  const demoPositionIndexRef = useRef(0)
   const latestPositionRef = useRef<GeolocationPosition | null>(null)
   const trackingOrderRef = useRef('')
 
@@ -1714,6 +1736,10 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
     if (locationIntervalRef.current !== null) {
       window.clearInterval(locationIntervalRef.current)
       locationIntervalRef.current = null
+    }
+    if (demoIntervalRef.current !== null) {
+      window.clearInterval(demoIntervalRef.current)
+      demoIntervalRef.current = null
     }
     latestPositionRef.current = null
     trackingOrderRef.current = ''
@@ -1737,6 +1763,19 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
   }
 
   function startLocationTracking(order: CourierDeliveryOrder) {
+    if (masterPreview && order.id === COURIER_DEMO_ORDER_ID) {
+      stopLocationTracking()
+      setError('')
+      trackingOrderRef.current = order.id
+      setTrackingOrderId(order.id)
+      demoPositionIndexRef.current = 0
+      setDemoPosition({ ...COURIER_DEMO_POSITIONS[0], recorded_at: new Date().toISOString() })
+      demoIntervalRef.current = window.setInterval(() => {
+        demoPositionIndexRef.current = Math.min(demoPositionIndexRef.current + 1, COURIER_DEMO_POSITIONS.length - 1)
+        setDemoPosition({ ...COURIER_DEMO_POSITIONS[demoPositionIndexRef.current], recorded_at: new Date().toISOString() })
+      }, 20000)
+      return
+    }
     if (!navigator.geolocation) {
       setError('Este navegador não oferece geolocalização. Abra o PWA em um navegador compatível e permita o acesso ao GPS.')
       return
@@ -1772,6 +1811,7 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
   useEffect(() => () => {
     if (locationWatchRef.current !== null && navigator.geolocation) navigator.geolocation.clearWatch(locationWatchRef.current)
     if (locationIntervalRef.current !== null) window.clearInterval(locationIntervalRef.current)
+    if (demoIntervalRef.current !== null) window.clearInterval(demoIntervalRef.current)
   }, [])
 
   useEffect(() => {
@@ -1780,7 +1820,7 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
     void (async () => {
       try {
         const { data, error: queryError } = await requireSupabase().from('orders')
-          .select('id, order_number, status, payment_method, payment_status, subtotal, shipping_amount, total, delivery_address, customer_snapshot, courier_id, is_pickup, created_at, order_items(product_name, sku, quantity)')
+          .select('id, order_number, status, payment_method, payment_status, subtotal, shipping_amount, total, delivery_route_geometry, delivery_eta_seconds, delivery_address, customer_snapshot, courier_id, is_pickup, created_at, order_items(product_name, sku, quantity)')
           .eq('tenant_id', portal.tenantId)
           .eq('is_pickup', false)
           .in('status', ['approved', 'separating', 'checking', 'delivery'])
@@ -1825,6 +1865,27 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
     return () => { void client.removeChannel(channel) }
   }, [portal.tenantId])
 
+  const demoOrder: CourierDeliveryOrder = {
+    id: COURIER_DEMO_ORDER_ID,
+    order_number: 1042,
+    status: demoStage === 'ready' ? 'checking' : demoStage === 'in_transit' ? 'delivery' : 'delivered',
+    payment_method: 'pix',
+    payment_status: 'paid',
+    subtotal: 259.9,
+    shipping_amount: 15,
+    total: 274.9,
+    delivery_route_geometry: COURIER_DEMO_ROUTE,
+    delivery_eta_seconds: 240,
+    delivery_address: { street: 'Rua Japurá', number: '120', district: 'Centro', city: 'Manaus', state: 'AM', postal_code: '69020-180' },
+    customer_snapshot: { full_name: 'Oficina Demonstração' },
+    courier_id: demoStage === 'ready' ? null : user.id,
+    is_pickup: false,
+    created_at: new Date().toISOString(),
+    order_items: [
+      { product_name: 'Pastilha de freio dianteira', sku: 'FRE-1042', quantity: 1 },
+      { product_name: 'Filtro de óleo', sku: 'FIL-2088', quantity: 2 },
+    ],
+  }
   const availableOrders = orders.filter((order) => !order.courier_id)
   const activeOrders = orders.filter((order) => order.courier_id === user.id && order.status === 'delivery')
   const originLinks = courierMapLinks(storeAddress)
@@ -1834,6 +1895,11 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
     setError('')
     setNotice('')
     try {
+      if (masterPreview && order.id === COURIER_DEMO_ORDER_ID) {
+        setDemoStage('in_transit')
+        setNotice(`Demonstração: pedido #${order.order_number} coletado e em trânsito.`)
+        return
+      }
       const { error: acceptError } = await requireSupabase().rpc('accept_delivery', { p_order_id: order.id })
       if (acceptError) throw acceptError
       setNotice(`Pedido #${order.order_number} atribuído à sua rota.`)
@@ -1861,6 +1927,13 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
     setError('')
     let uploadedPath = ''
     try {
+      if (masterPreview && activeOrder.id === COURIER_DEMO_ORDER_ID) {
+        setDemoStage('delivered')
+        stopLocationTracking()
+        setActiveOrder(null)
+        setNotice(`Demonstração: o cliente recebeu o pedido #${activeOrder.order_number}. Nenhum dado real foi alterado.`)
+        return
+      }
       const numericAmount = Number(amountReceived.replace(',', '.')) || 0
       if (numericAmount > 0 && !collectionMethod) throw new Error('Selecione como o valor foi recebido.')
       if (activeOrder.payment_status !== 'paid' && Math.round(numericAmount * 100) !== Math.round(Number(activeOrder.total) * 100)) {
@@ -2651,7 +2724,6 @@ function StorefrontShop({
   const [year, setYear] = useState('')
   const [plate, setPlate] = useState('')
   const [search, setSearch] = useState('')
-  const [quickFilter, setQuickFilter] = useState<'' | 'express' | 'original' | 'popular'>('')
   const [vehicleNotice, setVehicleNotice] = useState('')
   const [vehicleError, setVehicleError] = useState('')
   const [cartNotice, setCartNotice] = useState('')
@@ -2766,25 +2838,11 @@ function StorefrontShop({
     index,
     score: search.trim() ? productSearchScore(search, product) : 0,
   })).filter(({ product, score }) => {
-    const productText = `${product.name} ${product.description ?? ''}`.toLocaleLowerCase('pt-BR')
-    const quickMatch = quickFilter === ''
-      || (quickFilter === 'express' && product.stock > 0)
-      || (quickFilter === 'original' && /original|genu[ií]na|homologad|garantia/.test(productText))
-      || (quickFilter === 'popular' && /filtro|pastilha|[oó]leo|vela/.test(productText))
     const makeMatch = !make || product.compatible_makes.length === 0 || product.compatible_makes.some((value) => value.toLocaleLowerCase('pt-BR') === make.toLocaleLowerCase('pt-BR'))
     const modelMatch = !model || product.compatible_models.length === 0 || product.compatible_models.some((value) => value.toLocaleLowerCase('pt-BR') === model.toLocaleLowerCase('pt-BR'))
     const yearMatch = !year || product.compatible_years.length === 0 || product.compatible_years.includes(Number(year))
-    return quickMatch && (!search.trim() || score > 0) && makeMatch && modelMatch && yearMatch
+    return (!search.trim() || score > 0) && makeMatch && modelMatch && yearMatch
   }).sort((left, right) => right.score - left.score || left.index - right.index).map(({ product }) => product)
-
-  function applyQuickFilter(filter: 'express' | 'original' | 'popular') {
-    setQuickFilter(filter)
-    setSearch('')
-    setMake('')
-    setModel('')
-    setYear('')
-    window.requestAnimationFrame(() => document.getElementById('storefront-products')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-  }
 
   function updateAddress(field: keyof typeof address, value: string) {
     setAddress((current) => ({ ...current, [field]: value }))
@@ -2993,6 +3051,7 @@ function StorefrontShop({
 
   return <>
     <header className="storefront-heading storefront-store-header">
+      {store.logo_url && <img className="storefront-header-backdrop" src={store.logo_url} alt="" aria-hidden="true" />}
       <div className="storefront-brand">
         {store.logo_url && <div className="storefront-logo-frame"><img className="storefront-logo" src={store.logo_url} alt={`Logomarca ${store.name}`} /></div>}
         <div><p className="eyebrow">VITRINE B2C / B2B</p><h1>{store.brand.app_name ?? store.name}</h1><p className="auth-description">{store.brand.tagline || `Vitrine oficial ${store.name}.`}</p></div>
@@ -3000,7 +3059,7 @@ function StorefrontShop({
       <form className="storefront-top-search" role="search" onSubmit={(event) => event.preventDefault()}>
         <label className="storefront-header-search">
           <Search size={19} aria-hidden="true" />
-          <input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setQuickFilter('') }} placeholder="Buscar peças, modelo, SKU ou código OEM" aria-label="Buscar peças, modelo, SKU ou código OEM" />
+          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar peças, modelo, SKU ou código OEM" aria-label="Buscar peças, modelo, SKU ou código OEM" />
         </label>
         <button type="submit" aria-label="Buscar"><Search size={18} /></button>
       </form>
@@ -3013,10 +3072,6 @@ function StorefrontShop({
     {store.status === 'trial' && <p className="storefront-trial-message">Loja em demonstração: você pode explorar o catálogo, mas pedidos e pagamentos ficam disponíveis após a ativação comercial.</p>}
     <section className="storefront-quick-links" aria-label="Atalhos da loja">
       <button type="button" onClick={() => { document.getElementById(`storefront-plate-${store.slug}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); window.requestAnimationFrame(() => document.getElementById(`storefront-plate-${store.slug}`)?.focus()) }}><span><CarFront size={20} /></span><b>Consulta por placa</b><small>Encontre peças para seu veículo</small></button>
-      <button type="button" aria-pressed={quickFilter === 'express'} onClick={() => applyQuickFilter('express')}><span><Zap size={20} /></span><b>Entrega expressa</b><small>Veja itens disponíveis em estoque</small></button>
-      <button type="button" aria-pressed={quickFilter === 'original'} onClick={() => applyQuickFilter('original')}><span><ShieldCheck size={20} /></span><b>Originais & garantia</b><small>Consulte produtos identificados</small></button>
-      <button type="button" aria-pressed={quickFilter === 'popular'} onClick={() => applyQuickFilter('popular')}><span><Flame size={20} /></span><b>Mais procurados</b><small>Filtros, pastilhas, óleos e velas</small></button>
-      <button type="button" onClick={() => { setPaymentMethod('pix'); setCheckoutOpen(true) }}><span><CreditCard size={20} /></span><b>Pagamento</b><small>Pix ou cartão pelo Asaas</small></button>
       <a href={whatsappHref} target="_blank" rel="noreferrer"><span><MessageCircle size={20} /></span><b>Atendimento técnico</b><small>{whatsappNumber ? 'Tire dúvidas pelo WhatsApp' : 'Fale com um consultor'}</small></a>
     </section>
     <section className="storefront-catalog">
@@ -3033,9 +3088,8 @@ function StorefrontShop({
         <label>Marca<select value={make} onChange={(event) => { setMake(event.target.value); setModel(''); setYear('') }}><option value="">Todas as marcas</option>{makes.map((value) => <option key={value}>{value}</option>)}</select></label>
         <label>Modelo<select value={model} onChange={(event) => { setModel(event.target.value); setYear('') }}><option value="">Todos os modelos</option>{models.map((value) => <option key={value}>{value}</option>)}</select></label>
         <label>Ano<select value={year} onChange={(event) => setYear(event.target.value)}><option value="">Todos os anos</option>{years.map((value) => <option key={value}>{value}</option>)}</select></label>
-        {(search || make || model || year || plate || quickFilter) && <button className="storefront-clear-filters" type="button" onClick={() => {
+        {(search || make || model || year || plate) && <button className="storefront-clear-filters" type="button" onClick={() => {
           setSearch('')
-          setQuickFilter('')
           setMake('')
           setModel('')
           setYear('')
@@ -3199,7 +3253,6 @@ function PromoBannerCarousel({ banners }: { banners: string[] }) {
   }, [banners.length, isHovered, currentIndex])
 
   return <section className="storefront-banner-carousel" aria-label="Ofertas e banners promocionais" aria-roledescription="carrossel" onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
-    <div className="storefront-banner-backdrop" style={{ backgroundImage: `url("${banners[currentIndex]}")` }} aria-hidden="true" />
     <img key={currentIndex} src={banners[currentIndex]} alt={`Oferta promocional ${currentIndex + 1}`} />
     {banners.length > 1 && <>
       <button type="button" aria-label="Banner anterior" onClick={() => setActiveIndex((index) => (index - 1 + banners.length) % banners.length)}><ArrowLeft size={18} /></button>
