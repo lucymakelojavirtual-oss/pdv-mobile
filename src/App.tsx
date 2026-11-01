@@ -32,10 +32,10 @@ type CatalogProduct = {
   name: string
   description: string | null
   price: number
-  cost_price: number
+  cost_price?: number
   stock: number
-  minimum_stock: number
-  storage_location: string
+  minimum_stock?: number
+  storage_location?: string
   image_url: string | null
   compatible_makes: string[]
   compatible_models: string[]
@@ -1281,13 +1281,16 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
   const [deleteBusy, setDeleteBusy] = useState(false)
 
   async function loadProducts() {
-    const { data, error: loadError } = await requireSupabase().from('products')
-      .select(isSeller
-        ? 'id, category_id, sku, oem_code, name, description, price, stock, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines, is_published'
-        : 'id, category_id, sku, oem_code, name, description, price, cost_price, stock, minimum_stock, storage_location, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines, is_published')
-      .eq('tenant_id', portal.tenantId).order('name')
-    if (loadError) throw loadError
-    setProducts((data ?? []) as CatalogProduct[])
+    const client = requireSupabase()
+    const result = isSeller
+      ? await client.from('products')
+        .select('id, category_id, sku, oem_code, name, description, price, stock, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines, is_published')
+        .eq('tenant_id', portal.tenantId).order('name')
+      : await client.from('products')
+        .select('id, category_id, sku, oem_code, name, description, price, cost_price, stock, minimum_stock, storage_location, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines, is_published')
+        .eq('tenant_id', portal.tenantId).order('name')
+    if (result.error) throw result.error
+    setProducts((result.data ?? []) as CatalogProduct[])
   }
 
   async function loadReceipts() {
@@ -1322,10 +1325,10 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
     setName(product.name)
     setDescription(product.description ?? '')
     setPrice(String(product.price))
-    setCostPrice(String(product.cost_price))
+    setCostPrice(String(product.cost_price ?? 0))
     setStock(String(product.stock))
-    setMinimumStock(String(product.minimum_stock))
-    setStorageLocation(product.storage_location)
+    setMinimumStock(String(product.minimum_stock ?? 0))
+    setStorageLocation(product.storage_location ?? '')
     setCompatibleMakes(product.compatible_makes.join(', '))
     setCompatibleModels(product.compatible_models.join(', '))
     setCompatibleYears(product.compatible_years.join(', '))
@@ -1588,7 +1591,7 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
     <div className="product-admin-list">
       {loading ? <p className="auth-description">Carregando produtos…</p> : products.length ? products.map((product) => <article key={product.id}>
         {product.image_url ? <img src={product.image_url} alt="" /> : <Package size={20} />}
-        <div><b>{product.name}</b><small>{product.sku} · venda {money(Number(product.price))}{!isSeller && ` · custo ${money(Number(product.cost_price))}`} · estoque {product.stock}{!isSeller && `/${product.minimum_stock} mín. · ${product.storage_location || 'sem endereço'}`} · {product.is_published ? 'publicado' : 'rascunho'}</small>{!isSeller && product.stock <= product.minimum_stock && product.minimum_stock > 0 && <span className="stock-warning">Estoque no mínimo ou abaixo</span>}{productFitment(product) && <small>{productFitment(product)}</small>}</div>
+        <div><b>{product.name}</b><small>{product.sku} · venda {money(Number(product.price))}{!isSeller && ` · custo ${money(Number(product.cost_price ?? 0))}`} · estoque {product.stock}{!isSeller && `/${product.minimum_stock ?? 0} mín. · ${product.storage_location || 'sem endereço'}`} · {product.is_published ? 'publicado' : 'rascunho'}</small>{!isSeller && product.stock <= (product.minimum_stock ?? 0) && (product.minimum_stock ?? 0) > 0 && <span className="stock-warning">Estoque no mínimo ou abaixo</span>}{productFitment(product) && <small>{productFitment(product)}</small>}</div>
         <button className="auth-button auth-button-secondary" type="button" onClick={() => editProduct(product)}>Editar</button>
         {canDelete && <button className="product-delete-button" type="button" aria-label={`Excluir ${product.name}`} onClick={() => isSeller ? (setError(''), setProductToDelete(product), setDeletePin('')) : void deleteProduct(product)}><Trash2 size={16} /></button>}
       </article>) : <p className="auth-description">Nenhum produto cadastrado.</p>}
@@ -1605,7 +1608,7 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
         <label>Produto<select required value={receiptProductId} onChange={(event) => {
           setReceiptProductId(event.target.value)
           const selectedProduct = products.find((product) => product.id === event.target.value)
-          if (selectedProduct) setReceiptUnitCost(String(selectedProduct.cost_price))
+          if (selectedProduct) setReceiptUnitCost(String(selectedProduct.cost_price ?? 0))
         }}><option value="">Selecione o produto</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>)}</select></label>
         <div className="auth-form-row">
           <label>Número da NF-e<input required maxLength={50} value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} /></label>
