@@ -882,7 +882,7 @@ td:first-child > small { display: block; margin-top: 4px; color: #999e95; font-s
 .storefront-banner-dots button[aria-current="true"] { background: white; }
 .storefront-heading .storefront-brand .auth-description { margin-top: 5px; color: var(--store-color, #293125); font: 600 12px/1.35 'Manrope', sans-serif; }
 .storefront-store-header { position: relative; isolation: isolate; }
-.storefront-store-header::before { position: absolute; inset: 0; z-index: 0; background-image: var(--storefront-logo-watermark, none); background-position: center; background-size: cover; content: ''; opacity: .18; pointer-events: none; }
+.storefront-store-header::before { position: absolute; inset: 0; z-index: 0; background-image: var(--storefront-logo-watermark, none); background-position: center; background-repeat: no-repeat; background-size: contain; content: ''; opacity: .18; pointer-events: none; mix-blend-mode: multiply; }
 .storefront-store-header > .storefront-brand, .storefront-store-header > .storefront-top-search, .storefront-store-header > .storefront-account-nav { position: relative; z-index: 1; }
 .storefront-banner-carousel:focus-within > button, .storefront-banner-carousel:hover > button { background: rgba(32,36,31,.72); opacity: 1; }
 @media (hover: none) {
@@ -1108,10 +1108,10 @@ td:first-child > small { display: block; margin-top: 4px; color: #999e95; font-s
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--store-color, #293125) 16%, #e6e9e1);
   border-radius: 12px;
-  background: white;
+  background: transparent;
   box-shadow: 0 2px 6px rgba(32, 36, 31, .12);
 }
-.storefront-logo-frame .storefront-logo { display: block; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border-radius: inherit; object-fit: contain; }
+.storefront-logo-frame .storefront-logo { display: block; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border-radius: inherit; object-fit: cover; mix-blend-mode: multiply; }
 .storefront-header-search {
   min-width: 0;
   min-height: 48px;
