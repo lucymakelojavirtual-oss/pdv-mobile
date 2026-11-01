@@ -1669,13 +1669,6 @@ type CourierDeliveryOrder = {
 }
 
 const COURIER_DEMO_ORDER_ID = 'admin-preview-order'
-const COURIER_DEMO_ROUTE = {
-  type: 'LineString' as const,
-  coordinates: [
-    [-60.0255, -3.0992], [-60.0238, -3.1011], [-60.0217, -3.1038],
-    [-60.0193, -3.1061], [-60.0171, -3.1088], [-60.0148, -3.1112],
-  ] as [number, number][],
-}
 const COURIER_DEMO_POSITIONS: LiveCourierPosition[] = [
   { latitude: -3.0992, longitude: -60.0255, heading: 140, recorded_at: '' },
   { latitude: -3.1011, longitude: -60.0238, heading: 140, recorded_at: '' },
@@ -1714,7 +1707,7 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [trackingOrderId, setTrackingOrderId] = useState('')
   const [demoStage, setDemoStage] = useState<'ready' | 'in_transit' | 'delivered'>('ready')
-  const [demoPosition, setDemoPosition] = useState<LiveCourierPosition | null>(null)
+  const [, setDemoPosition] = useState<LiveCourierPosition | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const locationWatchRef = useRef<number | null>(null)
@@ -1865,27 +1858,6 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
     return () => { void client.removeChannel(channel) }
   }, [portal.tenantId])
 
-  const demoOrder: CourierDeliveryOrder = {
-    id: COURIER_DEMO_ORDER_ID,
-    order_number: 1042,
-    status: demoStage === 'ready' ? 'checking' : demoStage === 'in_transit' ? 'delivery' : 'delivered',
-    payment_method: 'pix',
-    payment_status: 'paid',
-    subtotal: 259.9,
-    shipping_amount: 15,
-    total: 274.9,
-    delivery_route_geometry: COURIER_DEMO_ROUTE,
-    delivery_eta_seconds: 240,
-    delivery_address: { street: 'Rua Japurá', number: '120', district: 'Centro', city: 'Manaus', state: 'AM', postal_code: '69020-180' },
-    customer_snapshot: { full_name: 'Oficina Demonstração' },
-    courier_id: demoStage === 'ready' ? null : user.id,
-    is_pickup: false,
-    created_at: new Date().toISOString(),
-    order_items: [
-      { product_name: 'Pastilha de freio dianteira', sku: 'FRE-1042', quantity: 1 },
-      { product_name: 'Filtro de óleo', sku: 'FIL-2088', quantity: 2 },
-    ],
-  }
   const availableOrders = orders.filter((order) => !order.courier_id)
   const activeOrders = orders.filter((order) => order.courier_id === user.id && order.status === 'delivery')
   const originLinks = courierMapLinks(storeAddress)
