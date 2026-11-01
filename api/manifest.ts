@@ -38,7 +38,7 @@ export default async function handler(request: ManifestRequest, response: Manife
   const slug = queryValue(request.query?.tenant)
   const app = queryValue(request.query?.app)
   const entry = queryValue(request.query?.entry)
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(slug) || !['storefront', 'courier', 'merchant'].includes(app)) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(slug) || !['storefront', 'courier', 'merchant', 'seller'].includes(app)) {
     return response.status(400).json({ error: 'A valid tenant and PWA type are required' })
   }
 
@@ -68,11 +68,11 @@ export default async function handler(request: ManifestRequest, response: Manife
     const storeName = typeof brand.app_name === 'string' && brand.app_name.trim()
       ? brand.app_name.trim()
       : tenant.name
-    const appLabel = app === 'courier' ? 'Entregas' : app === 'merchant' ? 'Painel' : ''
+    const appLabel = app === 'courier' ? 'Entregas' : app === 'merchant' ? 'Painel' : app === 'seller' ? 'Vendas' : ''
     const appName = appLabel ? `${storeName} · ${appLabel}` : storeName
-    const routePrefix = app === 'courier' ? 'driver' : app === 'merchant' ? 'app' : 'loja'
-    const memberEntry = (app === 'courier' && entry === 'courier') || (app === 'merchant' && entry === 'merchant')
-    const startPath = memberEntry ? (app === 'courier' ? '/entregador' : '/app') : `/${routePrefix}/${encodeURIComponent(tenant.slug)}`
+    const routePrefix = app === 'courier' ? 'driver' : app === 'merchant' ? 'app' : app === 'seller' ? 'vendedor' : 'loja'
+    const memberEntry = (app === 'courier' && entry === 'courier') || (app === 'merchant' && entry === 'merchant') || (app === 'seller' && entry === 'seller')
+    const startPath = memberEntry ? (app === 'courier' ? '/entregador' : app === 'merchant' ? '/app' : '/vendedor') : `/${routePrefix}/${encodeURIComponent(tenant.slug)}`
     const themeColor = typeof brand.primary_color === 'string' && /^#[\da-f]{6}$/i.test(brand.primary_color)
       ? brand.primary_color
       : '#f5f6f1'

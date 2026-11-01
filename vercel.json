@@ -7,6 +7,7 @@
     { "source": "/registrar", "destination": "/index.html" },
     { "source": "/login", "destination": "/index.html" },
     { "source": "/entregador", "destination": "/index.html" },
+    { "source": "/vendedor", "destination": "/index.html" },
     { "source": "/driver/:slug", "destination": "/index.html" },
     { "source": "/loja/:slug/produto/:productId", "destination": "/index.html" },
     { "source": "/loja/:slug", "destination": "/index.html" }

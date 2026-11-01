@@ -83,8 +83,11 @@ type CustomerOrder = {
   total: number
   is_pickup: boolean
   delivery_address: Record<string, string> | null
+  delivery_route_geometry: { type: 'LineString'; coordinates: [number, number][] } | null
+  delivery_eta_seconds: number | null
   created_at: string
   asaas_checkout_url: string | null
+  confirmation_pin: string | null
   timeline: { status: string; created_at: string }[]
   items: { product_name: string; sku: string; quantity: number; unit_price: number }[]
 }
@@ -168,7 +171,7 @@ function storeThemeStyle(color?: string): React.CSSProperties {
   return { '--store-color': primaryColor } as React.CSSProperties
 }
 
-type TenantPwaApp = 'storefront' | 'courier' | 'merchant'
+type TenantPwaApp = 'storefront' | 'courier' | 'merchant' | 'seller'
 
 function syncTenantPwaIdentity(
   tenant: Pick<Portal, 'slug' | 'tenantName' | 'logoUrl' | 'brand'> | { slug: string; name: string; logoUrl: string | null; brand: Portal['brand'] },
@@ -176,7 +179,7 @@ function syncTenantPwaIdentity(
 ) {
   const tenantName = 'name' in tenant ? tenant.name : tenant.tenantName
   const storeName = tenant.brand.app_name?.trim() || tenantName
-  const appLabel = app === 'courier' ? 'Entregas' : app === 'merchant' ? 'Painel' : ''
+  const appLabel = app === 'courier' ? 'Entregas' : app === 'merchant' ? 'Painel' : app === 'seller' ? 'Vendas' : ''
   const appName = appLabel ? `${storeName} · ${appLabel}` : storeName
   const iconUrl = tenant.brand.app_icon_512_url || tenant.brand.app_icon_192_url || tenant.logoUrl
   const themeColor = tenant.brand.primary_color && /^#[\da-f]{6}$/i.test(tenant.brand.primary_color)
@@ -186,7 +189,9 @@ function syncTenantPwaIdentity(
     ? 'courier'
     : app === 'merchant' && window.location.pathname === '/app'
       ? 'merchant'
-      : ''
+      : app === 'seller' && window.location.pathname === '/vendedor'
+        ? 'seller'
+        : ''
   const manifestUrl = `/api/manifest?tenant=${encodeURIComponent(tenant.slug)}&app=${app}${memberEntry ? `&entry=${memberEntry}` : ''}`
 
   document.title = appName
@@ -252,6 +257,7 @@ function orderStatusLabel(status: string) {
     separating: 'Separando produtos',
     checking: 'Conferindo pedido',
     delivery: 'Em Trânsito',
+    awaiting_pickup: 'Aguardando retirada no balcão',
     delivered: 'Pedido entregue',
     cancelled: 'Pedido cancelado',
   }
@@ -491,6 +497,7 @@ export default function App() {
   if (path === '/cliente' || path === '/cliente/entrar') return <CustomerAccountPage />
   if (path === '/login') return <LoginPage kind="merchant" />
   if (path === '/admin/login') return <LoginPage kind="admin" />
+  if (path === '/vendedor') return <ProtectedPage path={path} />
   const storefrontMatch = path.match(/^\/loja\/([^/]+)(?:\/produto\/([^/]+))?$/)
   if (storefrontMatch) return <StorefrontPage slug={decodeURIComponent(storefrontMatch[1])} productId={storefrontMatch[2] ? decodeURIComponent(storefrontMatch[2]) : undefined} />
   const masterStoreViewMatch = path.match(/^\/(app|driver)\/([^/]+)$/)
@@ -793,8 +800,16 @@ function ProtectedPage({ path }: { path: string }) {
           navigate('/app')
           return
         }
-        if (path === '/app' && currentPortal.role === 'courier') {
+        if (path === '/app' && currentPortal.role === 'staff') {
+          navigate('/vendedor')
+          return
+        }
+        if ((path === '/app' || path === '/vendedor') && currentPortal.role === 'courier') {
           navigate('/entregador')
+          return
+        }
+        if (path === '/vendedor' && currentPortal.role !== 'staff') {
+          navigate('/app')
           return
         }
         setUser(data.user)
@@ -821,6 +836,7 @@ function ProtectedPage({ path }: { path: string }) {
   if (error) return <PageMessage title="Acesso indisponível" message={error} link={path === '/admin' ? '/admin/login' : '/login'} linkText="Ir para login" />
   if (path === '/admin' && user) return <AdminDashboard user={user} onLogout={logout} />
   if (!portal || !user) return <PageMessage title="Acesso indisponível" message="Não encontramos um perfil associado a esta conta." link="/login" linkText="Ir para login" />
+  if (path === '/vendedor' && portal.role === 'staff') return <SellerPortal user={user} portal={portal} onLogout={logout} />
   const masterPreview = isAdminUser(user) && /^\/(?:app|driver)\//.test(path)
   if (path === '/entregador' || path.startsWith('/driver/')) {
     return <CourierPortal user={user} portal={portal} onLogout={logout} masterPreview={masterPreview} />
@@ -830,6 +846,22 @@ function ProtectedPage({ path }: { path: string }) {
 
 function PageMessage({ title, message, link, linkText }: { title: string; message?: string; link?: string; linkText?: string }) {
   return <main className="auth-page"><section className="auth-card"><Brand /><h1>{title}</h1>{message && <p className="auth-description">{message}</p>}{link && <a className="auth-button auth-button-primary" href={link}>{linkText ?? 'Continuar'}</a>}</section></main>
+}
+
+function SellerPortal({ user, portal, onLogout }: { user: User; portal: Portal; onLogout: () => void }) {
+  useEffect(() => {
+    syncTenantPwaIdentity(portal, 'seller')
+  }, [portal])
+  return <main className="portal-page seller-portal" style={storeThemeStyle(portal.brand.primary_color)}>
+    <PortalHeader user={user} title={`Vendas · ${portal.tenantName}`} onLogout={onLogout} />
+    <section className="portal-content">
+      <p className="eyebrow">PAINEL DO VENDEDOR</p>
+      <h1>Catálogo da {portal.tenantName}</h1>
+      <p className="auth-description">Cadastre e atualize produtos. Exclusões exigem o PIN definido pela gestão da loja.</p>
+      <ProductCatalogManager portal={portal} role="staff" />
+      <StoreOrderWorkflowPanel portal={portal} />
+    </section>
+  </main>
 }
 
 function MerchantPortal({ user, portal, onLogout, masterPreview = false }: { user: User; portal: Portal; onLogout: () => void; masterPreview?: boolean }) {
@@ -856,12 +888,16 @@ function MerchantPortal({ user, portal, onLogout, masterPreview = false }: { use
         <section className="portal-panel">
           <div className="portal-panel-heading"><div><p className="eyebrow">APLICATIVOS DA LOJA</p><h2>Experiências PWA</h2></div><span>Disponíveis na estrutura atual</span></div>
           <div className="pwa-links">
-            <a href={masterPreview ? `/app/${encodeURIComponent(currentPortal.slug)}` : '/app'}><Store size={17} /><span><b>Lojista + vendedor</b><small>{masterPreview ? `/app/${currentPortal.slug}` : '/app · acesso por perfil'}</small></span></a>
+            <a href={masterPreview ? `/app/${encodeURIComponent(currentPortal.slug)}` : '/app'}><Store size={17} /><span><b>Painel lojista</b><small>{masterPreview ? `/app/${currentPortal.slug}` : '/app · gestão completa'}</small></span></a>
+            {!masterPreview && <a href="/vendedor"><UserRound size={17} /><span><b>Painel vendedor</b><small>/vendedor · catálogo com PIN para exclusão</small></span></a>}
             <a href={masterPreview ? `/driver/${encodeURIComponent(currentPortal.slug)}` : '/entregador'}><Bike size={17} /><span><b>Motoboy</b><small>{masterPreview ? `/driver/${currentPortal.slug}` : '/entregador · acesso por perfil'}</small></span></a>
             <a href={`/loja/${currentPortal.slug}`} target="_blank" rel="noreferrer"><Store size={17} /><span><b>Cliente</b><small>/loja/{currentPortal.slug}</small></span></a>
           </div>
         </section>
+        {canManageSettings && <TeamManagementPanel portal={currentPortal} />}
+        {canManageSettings && <TenantProductDeletePinPanel portal={currentPortal} />}
         {isStoreTeam && <ProductCatalogManager portal={currentPortal} role={portal.role} />}
+        {isStoreTeam && !masterPreview && <StoreOrderWorkflowPanel portal={currentPortal} />}
         {isStoreTeam && !masterPreview && <TenantCreditPanel portal={currentPortal} />}
         {canManageSettings && <ShippingSettings portal={currentPortal} />}
         {canManageSettings && <TenantAsaasSettings portal={currentPortal} />}
@@ -872,6 +908,204 @@ function MerchantPortal({ user, portal, onLogout, masterPreview = false }: { use
       {supportOpen && <SupportDialog user={user} tenantId={currentPortal.tenantId} onClose={() => setSupportOpen(false)} />}
     </main>
   )
+}
+
+function TeamManagementPanel({ portal }: { portal: Portal }) {
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState<'staff' | 'courier'>('staff')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function invite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const { data, error: inviteError } = await requireSupabase().functions.invoke('invite-store-member', {
+        body: { tenant_id: portal.tenantId, email: email.trim(), role },
+      })
+      if (inviteError) {
+        if (inviteError.context instanceof Response) {
+          const responseBody = await inviteError.context.clone().json().catch(() => null)
+          if (typeof responseBody?.error === 'string') throw new Error(responseBody.error)
+        }
+        throw inviteError
+      }
+      if (data?.error) throw new Error(String(data.error))
+      setNotice(`Convite enviado para ${email.trim()}. O acesso será ativado após a confirmação do e-mail.`)
+      setEmail('')
+    } catch (reason) {
+      setError(errorText(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <section className="portal-panel team-management-panel">
+    <div className="portal-panel-heading"><div><p className="eyebrow">ACESSOS DA EQUIPE</p><h2><UserRound size={17} /> Vendedores e entregadores</h2></div></div>
+    <p className="auth-description">Convide cada pessoa por e-mail. Os limites de vendedores e entregadores do plano são aplicados automaticamente.</p>
+    <form className="team-invite-form" onSubmit={(event) => void invite(event)}>
+      <label>E-mail do colaborador<input type="email" autoComplete="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} disabled={busy} /></label>
+      <label>Perfil<select value={role} onChange={(event) => setRole(event.target.value as typeof role)} disabled={busy}><option value="staff">Vendedor</option><option value="courier">Entregador</option></select></label>
+      <button className="auth-button auth-button-primary" type="submit" disabled={busy}>{busy ? 'Enviando convite…' : 'Enviar convite'}</button>
+      {error && <p className="form-message form-error" role="alert">{error}</p>}
+      {notice && <p className="form-message" role="status">{notice}</p>}
+    </form>
+  </section>
+}
+
+type StoreWorkflowOrder = {
+  id: string
+  order_number: number
+  status: string
+  payment_status: string
+  payment_method: string
+  total: number
+  is_pickup: boolean
+  delivery_address: Record<string, unknown> | null
+  created_at: string
+}
+
+function StoreOrderWorkflowPanel({ portal }: { portal: Portal }) {
+  const [orders, setOrders] = useState<StoreWorkflowOrder[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busyOrderId, setBusyOrderId] = useState('')
+  const [pickupOrder, setPickupOrder] = useState<StoreWorkflowOrder | null>(null)
+  const [pickupPin, setPickupPin] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function loadOrders() {
+    const { data, error: loadError } = await requireSupabase().from('orders')
+      .select('id, order_number, status, payment_status, payment_method, total, is_pickup, delivery_address, created_at')
+      .eq('tenant_id', portal.tenantId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    if (loadError) throw loadError
+    setOrders((data ?? []) as StoreWorkflowOrder[])
+  }
+
+  useEffect(() => {
+    let active = true
+    void loadOrders().catch((reason) => { if (active) setError(errorText(reason)) }).finally(() => { if (active) setLoading(false) })
+    const client = requireSupabase()
+    const channel = client.channel(`store-workflow-${portal.tenantId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `tenant_id=eq.${portal.tenantId}` }, () => {
+        void loadOrders().catch((reason) => { if (active) setError(errorText(reason)) })
+      }).subscribe()
+    return () => { active = false; void client.removeChannel(channel) }
+  }, [portal.tenantId])
+
+  async function advanceOrder(order: StoreWorkflowOrder, nextStatus: string) {
+    setBusyOrderId(order.id)
+    setError('')
+    setNotice('')
+    try {
+      const { error: updateError } = await requireSupabase().rpc('update_store_order_status', {
+        p_order_id: order.id,
+        p_next_status: nextStatus,
+      })
+      if (updateError) throw updateError
+      await loadOrders()
+      setNotice(`Pedido #${order.order_number}: ${orderStatusLabel(nextStatus)}.`)
+    } catch (reason) {
+      setError(errorText(reason))
+    } finally {
+      setBusyOrderId('')
+    }
+  }
+
+  async function confirmPickup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!pickupOrder) return
+    setBusyOrderId(pickupOrder.id)
+    setError('')
+    try {
+      const { data, error: pickupError } = await requireSupabase().rpc('complete_pickup_with_pin', {
+        p_order_id: pickupOrder.id,
+        p_pin: pickupPin,
+      })
+      if (pickupError) throw pickupError
+      if (data !== true) throw new Error('PIN incorreto ou bloqueado. Confira o código com o cliente.')
+      setPickupOrder(null)
+      setPickupPin('')
+      setNotice(`Retirada do pedido #${pickupOrder.order_number} confirmada.`)
+      await loadOrders()
+    } catch (reason) {
+      setError(errorText(reason))
+    } finally {
+      setBusyOrderId('')
+    }
+  }
+
+  return <section className="portal-panel store-order-workflow-panel">
+    <div className="portal-panel-heading"><div><p className="eyebrow">PEDIDOS DA LOJA</p><h2><PackageCheck size={17} /> Separação, retirada e entrega</h2></div><button className="icon-button" type="button" aria-label="Atualizar pedidos" onClick={() => void loadOrders().catch((reason) => setError(errorText(reason)))}><RefreshCw size={16} /></button></div>
+    <p className="auth-description">O pagamento é confirmado pelo Asaas. A equipe atualiza a separação, e a retirada no balcão exige o PIN do cliente.</p>
+    {error && <p className="form-message form-error" role="alert">{error}</p>}
+    {notice && <p className="form-message" role="status">{notice}</p>}
+    {loading ? <p className="auth-description">Carregando pedidos…</p> : orders.length ? <div className="store-order-workflow-list">{orders.map((order) => <article key={order.id}>
+      <header><div><b>Pedido #{order.order_number}</b><small>{new Date(order.created_at).toLocaleString('pt-BR')} · {order.is_pickup ? 'Retirada no balcão' : 'Entrega por motoboy'}</small></div><b className={`store-order-payment ${order.payment_status === 'paid' ? 'is-paid' : ''}`}>{order.payment_status === 'paid' ? 'Pagamento confirmado' : order.payment_status === 'failed' ? 'Pagamento não concluído' : 'Aguardando pagamento'}</b></header>
+      {order.delivery_address && <small>{courierAddressLabel(order.delivery_address)}</small>}
+      <div className="store-order-workflow-actions"><span>{orderStatusLabel(order.status)}</span>
+        {order.status === 'approved' && order.payment_status === 'paid' && <button className="auth-button auth-button-secondary" type="button" disabled={busyOrderId === order.id} onClick={() => void advanceOrder(order, 'separating')}>Iniciar separação</button>}
+        {order.status === 'separating' && <button className="auth-button auth-button-secondary" type="button" disabled={busyOrderId === order.id} onClick={() => void advanceOrder(order, 'checking')}>Conferir peças</button>}
+        {order.status === 'checking' && order.is_pickup && order.payment_status === 'paid' && <button className="auth-button auth-button-primary" type="button" disabled={busyOrderId === order.id} onClick={() => void advanceOrder(order, 'awaiting_pickup')}>Liberar retirada</button>}
+        {order.status === 'checking' && !order.is_pickup && <small>Aguardando aceite do entregador</small>}
+        {order.status === 'awaiting_pickup' && <button className="auth-button auth-button-primary" type="button" onClick={() => { setPickupOrder(order); setPickupPin(''); setError('') }}>Confirmar retirada com PIN</button>}
+        {order.status === 'delivery' && <small>Entrega em andamento com o motoboy</small>}
+      </div>
+    </article>)}</div> : <p className="auth-description">Ainda não há pedidos para esta loja.</p>}
+    {pickupOrder && <div className="seller-delete-pin-backdrop" onClick={() => { if (!busyOrderId) setPickupOrder(null) }}><form className="seller-delete-pin-dialog" role="dialog" aria-modal="true" onSubmit={(event) => void confirmPickup(event)} onClick={(event) => event.stopPropagation()}>
+      <h3>Confirmar retirada #{pickupOrder.order_number}</h3><p>Peça ao cliente o PIN de 4 dígitos exibido na área de pedidos.</p>
+      <label>PIN do cliente<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{4}" maxLength={4} value={pickupPin} onChange={(event) => setPickupPin(event.target.value.replace(/\D/g, '').slice(0, 4))} /></label>
+      {error && <p className="form-message form-error" role="alert">{error}</p>}
+      <div className="product-form-actions"><button className="auth-button auth-button-secondary" type="button" disabled={Boolean(busyOrderId)} onClick={() => setPickupOrder(null)}>Cancelar</button><button className="auth-button auth-button-primary" type="submit" disabled={Boolean(busyOrderId)}>{busyOrderId ? 'Validando…' : 'Confirmar retirada'}</button></div>
+    </form></div>}
+  </section>
+}
+
+function TenantProductDeletePinPanel({ portal }: { portal: Portal }) {
+  const [pin, setPin] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function savePin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    if (pin.length !== 6 || pin !== confirmation) {
+      setError('Os dois campos devem conter o mesmo PIN de 6 dígitos.')
+      return
+    }
+    setBusy(true)
+    try {
+      const { error: saveError } = await requireSupabase().rpc('save_tenant_product_delete_pin', { p_tenant_id: portal.tenantId, p_pin: pin })
+      if (saveError) throw saveError
+      setPin('')
+      setConfirmation('')
+      setNotice('PIN salvo. O vendedor precisará dele para excluir produtos.')
+    } catch (reason) {
+      setError(errorText(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <section className="portal-panel seller-delete-pin-settings">
+    <div className="portal-panel-heading"><div><p className="eyebrow">SEGURANÇA DO CATÁLOGO</p><h2><LockKeyhole size={17} /> PIN de exclusão do vendedor</h2></div></div>
+    <p className="auth-description">Defina um PIN de 6 dígitos. As tentativas são limitadas e somente o hash do PIN é armazenado.</p>
+    <form className="seller-delete-pin-settings-form" onSubmit={(event) => void savePin(event)}>
+      <label>Novo PIN<input required type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{6}" maxLength={6} value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 6))} disabled={busy} /></label>
+      <label>Confirmar PIN<input required type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{6}" maxLength={6} value={confirmation} onChange={(event) => setConfirmation(event.target.value.replace(/\D/g, '').slice(0, 6))} disabled={busy} /></label>
+      {error && <p className="form-message form-error" role="alert">{error}</p>}
+      {notice && <p className="form-message" role="status">{notice}</p>}
+      <button className="auth-button auth-button-primary" type="submit" disabled={busy}>{busy ? 'Salvando PIN…' : 'Salvar PIN'}</button>
+    </form>
+  </section>
 }
 
 function ShippingSettings({ portal }: { portal: Portal }) {
@@ -1008,7 +1242,8 @@ function TenantCreditPanel({ portal }: { portal: Portal }) {
 }
 
 function ProductCatalogManager({ portal, role }: { portal: Portal; role: string }) {
-  const canDelete = ['owner', 'admin', 'manager', 'admin_master', 'vancely_admin'].includes(role)
+  const isSeller = role === 'staff'
+  const canDelete = ['owner', 'admin', 'manager', 'admin_master', 'vancely_admin', 'staff'].includes(role)
   const [products, setProducts] = useState<CatalogProduct[]>([])
   const [editingId, setEditingId] = useState('')
   const [sku, setSku] = useState('')
@@ -1041,10 +1276,15 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [productToDelete, setProductToDelete] = useState<CatalogProduct | null>(null)
+  const [deletePin, setDeletePin] = useState('')
+  const [deleteBusy, setDeleteBusy] = useState(false)
 
   async function loadProducts() {
     const { data, error: loadError } = await requireSupabase().from('products')
-      .select('id, category_id, sku, oem_code, name, description, price, cost_price, stock, minimum_stock, storage_location, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines, is_published')
+      .select(isSeller
+        ? 'id, category_id, sku, oem_code, name, description, price, stock, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines, is_published'
+        : 'id, category_id, sku, oem_code, name, description, price, cost_price, stock, minimum_stock, storage_location, image_url, compatible_makes, compatible_models, compatible_years, compatible_engines, is_published')
       .eq('tenant_id', portal.tenantId).order('name')
     if (loadError) throw loadError
     setProducts((data ?? []) as CatalogProduct[])
@@ -1069,7 +1309,7 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
 
   useEffect(() => {
     let active = true
-    void Promise.all([loadProducts(), loadReceipts()])
+    void Promise.all(isSeller ? [loadProducts()] : [loadProducts(), loadReceipts()])
       .catch((reason) => { if (active) setError(errorText(reason)) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
@@ -1127,10 +1367,12 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
       if (years.some((year) => !Number.isInteger(year) || year < 1950 || year > 2100)) {
         throw new Error('Informe os anos de aplicação entre 1950 e 2100, separados por vírgula.')
       }
-      if (![price, costPrice].every((value) => value.trim() && Number.isFinite(Number(value)) && Number(value) >= 0)) {
+      if (!price.trim() || !Number.isFinite(Number(price)) || Number(price) < 0
+        || (!isSeller && (!costPrice.trim() || !Number.isFinite(Number(costPrice)) || Number(costPrice) < 0))) {
         throw new Error('Informe valores válidos e não negativos para preço de venda e custo.')
       }
-      if (![stock, minimumStock].every((value) => value.trim() && Number.isInteger(Number(value)) && Number(value) >= 0)) {
+      if (!stock.trim() || !Number.isInteger(Number(stock)) || Number(stock) < 0
+        || (!isSeller && (!minimumStock.trim() || !Number.isInteger(Number(minimumStock)) || Number(minimumStock) < 0))) {
         throw new Error('Estoque atual e mínimo devem ser números inteiros não negativos.')
       }
       const productValues = {
@@ -1140,10 +1382,12 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
         name: name.trim(),
         description: description.trim() || null,
         price: Number(price),
-        cost_price: Number(costPrice),
         stock: Number(stock),
-        minimum_stock: Number(minimumStock),
-        storage_location: storageLocation.trim(),
+        ...(!isSeller ? {
+          cost_price: Number(costPrice),
+          minimum_stock: Number(minimumStock),
+          storage_location: storageLocation.trim(),
+        } : {}),
         compatible_makes: splitList(compatibleMakes),
         compatible_models: splitList(compatibleModels),
         compatible_years: years,
@@ -1263,28 +1507,47 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
     }
   }
 
-  async function deleteProduct(product: CatalogProduct) {
+  async function deleteProduct(product: CatalogProduct, pin?: string) {
     if (receipts.some((receipt) => receipt.product_id === product.id)) {
       setError('Este produto possui recebimentos fiscais registrados e não pode ser excluído para preservar o histórico.')
       return
     }
-    if (!window.confirm(`Excluir o produto "${product.name}"?`)) return
+    if (!isSeller && !window.confirm(`Excluir o produto "${product.name}"?`)) return
     setError('')
     setNotice('')
     try {
-      const { error: deleteError } = await requireSupabase().from('products')
-        .delete().eq('id', product.id).eq('tenant_id', portal.tenantId)
-      if (deleteError) throw deleteError
+      if (isSeller) {
+        const { data: deleted, error: pinError } = await requireSupabase().rpc('delete_tenant_product_with_pin', {
+          p_product_id: product.id,
+          p_pin: pin ?? '',
+        })
+        if (pinError) throw pinError
+        if (deleted !== true) throw new Error('PIN incorreto ou bloqueado. Peça ao lojista para redefini-lo.')
+      } else {
+        const { error: deleteError } = await requireSupabase().from('products')
+          .delete().eq('id', product.id).eq('tenant_id', portal.tenantId)
+        if (deleteError) throw deleteError
+      }
       setProducts((current) => current.filter((item) => item.id !== product.id))
       if (editingId === product.id) clearForm()
+      setProductToDelete(null)
+      setDeletePin('')
       setNotice('Produto excluído.')
     } catch (reason) {
       setError(errorText(reason))
     }
   }
 
+  async function confirmSellerDelete(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!productToDelete) return
+    setDeleteBusy(true)
+    await deleteProduct(productToDelete, deletePin)
+    setDeleteBusy(false)
+  }
+
   return <section className="portal-panel">
-    <div className="portal-panel-heading"><div><p className="eyebrow">CATÁLOGO</p><h2><Package size={17} /> Produtos e peças</h2></div><span>{canDelete ? 'Acesso total' : 'Edição sem exclusão/configurações'}</span></div>
+    <div className="portal-panel-heading"><div><p className="eyebrow">CATÁLOGO</p><h2><Package size={17} /> Produtos e peças</h2></div><span>{isSeller ? 'Vendas · exclusão com PIN do lojista' : canDelete ? 'Gestão completa' : 'Edição sem exclusão/configurações'}</span></div>
     <form className="product-editor-form" onSubmit={saveProduct}>
       <div className="auth-form-row">
         <label>SKU<input required maxLength={80} value={sku} onChange={(event) => setSku(event.target.value)} /></label>
@@ -1294,13 +1557,13 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
       <label>Descrição<textarea maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
       <div className="auth-form-row">
         <label>Preço de venda (R$)<input type="number" min="0" step="0.01" required value={price} onChange={(event) => setPrice(event.target.value)} /></label>
-        <label>Custo unitário (R$)<input type="number" min="0" step="0.01" required value={costPrice} onChange={(event) => setCostPrice(event.target.value)} /></label>
+        {!isSeller && <label>Custo unitário (R$)<input type="number" min="0" step="0.01" required value={costPrice} onChange={(event) => setCostPrice(event.target.value)} /></label>}
       </div>
       <div className="auth-form-row">
         <label>Estoque atual<input type="number" min="0" step="1" required value={stock} onChange={(event) => setStock(event.target.value)} /></label>
-        <label>Estoque mínimo<input type="number" min="0" step="1" required value={minimumStock} onChange={(event) => setMinimumStock(event.target.value)} /></label>
+        {!isSeller && <label>Estoque mínimo<input type="number" min="0" step="1" required value={minimumStock} onChange={(event) => setMinimumStock(event.target.value)} /></label>}
       </div>
-      <label>Endereço físico / prateleira<input maxLength={120} value={storageLocation} onChange={(event) => setStorageLocation(event.target.value)} placeholder="Ex.: Corredor A · Estante 02 · Prateleira 3" /></label>
+      {!isSeller && <label>Endereço físico / prateleira<input maxLength={120} value={storageLocation} onChange={(event) => setStorageLocation(event.target.value)} placeholder="Ex.: Corredor A · Estante 02 · Prateleira 3" /></label>}
       <div className="inventory-fitment-fields">
         <h3>Aplicação veicular</h3>
         <p>Informe uma ou mais opções separadas por vírgula. Ex.: Toyota; Corolla; 2018, 2019; 1.8 Flex.</p>
@@ -1325,12 +1588,18 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
     <div className="product-admin-list">
       {loading ? <p className="auth-description">Carregando produtos…</p> : products.length ? products.map((product) => <article key={product.id}>
         {product.image_url ? <img src={product.image_url} alt="" /> : <Package size={20} />}
-        <div><b>{product.name}</b><small>{product.sku} · venda {money(Number(product.price))} · custo {money(Number(product.cost_price))} · estoque {product.stock}/{product.minimum_stock} mín. · {product.storage_location || 'sem endereço'} · {product.is_published ? 'publicado' : 'rascunho'}</small>{product.stock <= product.minimum_stock && product.minimum_stock > 0 && <span className="stock-warning">Estoque no mínimo ou abaixo</span>}{productFitment(product) && <small>{productFitment(product)}</small>}</div>
+        <div><b>{product.name}</b><small>{product.sku} · venda {money(Number(product.price))}{!isSeller && ` · custo ${money(Number(product.cost_price))}`} · estoque {product.stock}{!isSeller && `/${product.minimum_stock} mín. · ${product.storage_location || 'sem endereço'}`} · {product.is_published ? 'publicado' : 'rascunho'}</small>{!isSeller && product.stock <= product.minimum_stock && product.minimum_stock > 0 && <span className="stock-warning">Estoque no mínimo ou abaixo</span>}{productFitment(product) && <small>{productFitment(product)}</small>}</div>
         <button className="auth-button auth-button-secondary" type="button" onClick={() => editProduct(product)}>Editar</button>
-        {canDelete && <button className="product-delete-button" type="button" aria-label={`Excluir ${product.name}`} onClick={() => void deleteProduct(product)}><Trash2 size={16} /></button>}
+        {canDelete && <button className="product-delete-button" type="button" aria-label={`Excluir ${product.name}`} onClick={() => isSeller ? (setError(''), setProductToDelete(product), setDeletePin('')) : void deleteProduct(product)}><Trash2 size={16} /></button>}
       </article>) : <p className="auth-description">Nenhum produto cadastrado.</p>}
     </div>
-    <div className="inventory-receipt">
+    {productToDelete && <div className="seller-delete-pin-backdrop" onClick={() => { if (!deleteBusy) setProductToDelete(null) }}><form className="seller-delete-pin-dialog" role="dialog" aria-modal="true" onSubmit={(event) => void confirmSellerDelete(event)} onClick={(event) => event.stopPropagation()}>
+      <h3>Confirmar exclusão</h3><p>Informe o PIN de 6 dígitos definido pelo lojista para excluir “{productToDelete.name}”.</p>
+      <label>PIN do lojista<input type="password" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={deletePin} onChange={(event) => setDeletePin(event.target.value.replace(/\D/g, '').slice(0, 6))} /></label>
+      {error && <p className="form-message form-error" role="alert">{error}</p>}
+      <div className="product-form-actions"><button className="auth-button auth-button-secondary" type="button" disabled={deleteBusy} onClick={() => setProductToDelete(null)}>Cancelar</button><button className="auth-button auth-button-primary" type="submit" disabled={deleteBusy}>{deleteBusy ? 'Validando…' : 'Confirmar exclusão'}</button></div>
+    </form></div>}
+    {!isSeller && <div className="inventory-receipt">
       <div className="portal-panel-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h3>Conferência física e nota fiscal</h3></div><span>O estoque aumenta pela quantidade conferida</span></div>
       <form className="inventory-receipt-form" onSubmit={saveReceipt}>
         <label>Produto<select required value={receiptProductId} onChange={(event) => {
@@ -1364,7 +1633,7 @@ function ProductCatalogManager({ portal, role }: { portal: Portal; role: string 
           </article>
         }) : <p className="auth-description">Nenhum recebimento registrado.</p>}
       </div>
-    </div>
+    </div>}
   </section>
 }
 
@@ -1713,8 +1982,10 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
   const [note, setNote] = useState('')
   const [amountReceived, setAmountReceived] = useState('')
   const [collectionMethod, setCollectionMethod] = useState<'' | 'cash' | 'card' | 'pix'>('')
+  const [deliveryPin, setDeliveryPin] = useState('')
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [trackingOrderId, setTrackingOrderId] = useState('')
+  const [courierPosition, setCourierPosition] = useState<{ latitude: number; longitude: number; heading: number | null } | null>(null)
   const [, setDemoStage] = useState<'ready' | 'in_transit' | 'delivered'>('ready')
   const [, setDemoPosition] = useState<LiveCourierPosition | null>(null)
   const [error, setError] = useState('')
@@ -1746,6 +2017,7 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
     latestPositionRef.current = null
     trackingOrderRef.current = ''
     setTrackingOrderId('')
+    setCourierPosition(null)
   }
 
   async function sendTrackingPosition() {
@@ -1761,7 +2033,10 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
       heading: typeof heading === 'number' && Number.isFinite(heading) ? heading : null,
     })
     if (insertError) setError(`GPS ativo, mas não foi possível enviar a posição: ${errorText(insertError)}`)
-    else setError('')
+    else {
+      setError('')
+      setCourierPosition({ latitude, longitude, heading: typeof heading === 'number' && Number.isFinite(heading) ? heading : null })
+    }
   }
 
   function startLocationTracking(order: CourierDeliveryOrder) {
@@ -1772,9 +2047,12 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
       setTrackingOrderId(order.id)
       demoPositionIndexRef.current = 0
       setDemoPosition({ ...COURIER_DEMO_POSITIONS[0], recorded_at: new Date().toISOString() })
+      setCourierPosition(COURIER_DEMO_POSITIONS[0])
       demoIntervalRef.current = window.setInterval(() => {
         demoPositionIndexRef.current = Math.min(demoPositionIndexRef.current + 1, COURIER_DEMO_POSITIONS.length - 1)
-        setDemoPosition({ ...COURIER_DEMO_POSITIONS[demoPositionIndexRef.current], recorded_at: new Date().toISOString() })
+        const demoPosition = COURIER_DEMO_POSITIONS[demoPositionIndexRef.current]
+        setDemoPosition({ ...demoPosition, recorded_at: new Date().toISOString() })
+        setCourierPosition(demoPosition)
       }, 20000)
       return
     }
@@ -1790,6 +2068,11 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
     try {
       locationWatchRef.current = navigator.geolocation.watchPosition((position) => {
         latestPositionRef.current = position
+        setCourierPosition({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          heading: typeof position.coords.heading === 'number' && Number.isFinite(position.coords.heading) ? position.coords.heading : null,
+        })
         if (firstPosition) {
           firstPosition = false
           void sendTrackingPosition()
@@ -1867,7 +2150,7 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
     return () => { void client.removeChannel(channel) }
   }, [portal.tenantId])
 
-  const availableOrders = orders.filter((order) => !order.courier_id)
+  const availableOrders = orders.filter((order) => !order.courier_id && order.status === 'checking' && order.payment_status === 'paid' && !order.is_pickup)
   const activeOrders = orders.filter((order) => order.courier_id === user.id && order.status === 'delivery')
   const originLinks = courierMapLinks(storeAddress)
 
@@ -1894,6 +2177,7 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
 
   function openCompletion(order: CourierDeliveryOrder) {
     setActiveOrder(order)
+    setDeliveryPin('')
     setNote('')
     setAmountReceived(order.payment_status === 'paid' ? '' : Number(order.total).toFixed(2))
     setCollectionMethod('')
@@ -1934,14 +2218,16 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
         })
         if (uploadError) throw uploadError
       }
-      const { error: completionError } = await client.rpc('complete_delivery', {
+      const { data: completed, error: completionError } = await client.rpc('complete_delivery', {
         p_order_id: activeOrder.id,
         p_note: note.trim(),
         p_amount_received: numericAmount,
         p_payment_method: numericAmount > 0 ? collectionMethod : null,
         p_proof_path: uploadedPath || null,
+        p_confirmation_pin: deliveryPin,
       })
       if (completionError) throw completionError
+      if (completed !== true) throw new Error('PIN incorreto ou bloqueado. Confira o código informado com o cliente.')
       if (trackingOrderRef.current === activeOrder.id) stopLocationTracking()
       setActiveOrder(null)
       setNotice(`Entrega do pedido #${activeOrder.order_number} concluída.`)
@@ -1962,10 +2248,13 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
   function deliveryCard(order: CourierDeliveryOrder, assigned: boolean) {
     const destinationLinks = courierMapLinks(order.delivery_address)
     const customerName = typeof order.customer_snapshot.full_name === 'string' ? order.customer_snapshot.full_name : 'Cliente'
+    const etaMinutes = order.delivery_eta_seconds === null ? null : Math.max(1, Math.round(order.delivery_eta_seconds / 60))
     return <article className="courier-delivery-card" key={order.id}>
       <header><div><p className="eyebrow">{assigned ? 'SUA ROTA' : 'PRONTO PARA COLETA'}</p><h3>Pedido #{order.order_number}</h3></div><span className={`courier-payment-status ${order.payment_status === 'paid' ? 'is-paid' : ''}`}>{order.payment_status === 'paid' ? 'Pago via Asaas' : 'Pagamento pendente'}</span></header>
       <div className="courier-delivery-facts"><span>Frete <b>{money(Number(order.shipping_amount))}</b></span><span>Pagamento <b>{order.payment_method === 'pix' ? 'Pix' : order.payment_method === 'card' ? 'Cartão' : order.payment_method}</b></span><span>Total <b>{money(Number(order.total))}</b></span></div>
+      {etaMinutes !== null && <p className="courier-delivery-eta">Previsão da rota OpenStreet/OSRM: cerca de {etaMinutes} min</p>}
       {order.payment_status !== 'paid' && <p className="courier-collection-hint"><Banknote size={15} /> Se receber algum valor na entrega, registre na confirmação. O status Asaas não será alterado pelo PWA.</p>}
+      {assigned && order.delivery_route_geometry && <section className="courier-live-route"><h4>Rota e localização do motoboy</h4><RouteMap geometry={order.delivery_route_geometry} courierPosition={trackingOrderId === order.id ? courierPosition ?? undefined : undefined} /></section>}
       <div className="courier-address-grid">
         <section><small><MapPin size={14} /> ORIGEM · LOJA</small><b>{portal.tenantName}</b><p>{courierAddressLabel(storeAddress)}</p><div><a href={originLinks.google} target="_blank" rel="noreferrer">Google Maps <ExternalLink size={12} /></a><a href={originLinks.waze} target="_blank" rel="noreferrer">Waze <ExternalLink size={12} /></a></div></section>
         <section><small><MapPin size={14} /> DESTINO · {customerName.toLocaleUpperCase('pt-BR')}</small><p>{courierAddressLabel(order.delivery_address)}</p><div><a href={destinationLinks.google} target="_blank" rel="noreferrer">Google Maps <ExternalLink size={12} /></a><a href={destinationLinks.waze} target="_blank" rel="noreferrer">Waze <ExternalLink size={12} /></a></div></section>
@@ -1992,12 +2281,12 @@ function CourierPortal({ user, portal, onLogout, masterPreview = false }: { user
         <section><div className="courier-section-heading"><h2>Minha rota</h2><span>{activeOrders.length}</span></div>{activeOrders.length ? activeOrders.map((order) => deliveryCard(order, true)) : <p className="courier-empty-state">Você ainda não tem entregas em andamento.</p>}</section>
         <section><div className="courier-section-heading"><h2>Fila de coleta</h2><span>{availableOrders.length}</span></div>{availableOrders.length ? availableOrders.map((order) => deliveryCard(order, false)) : <p className="courier-empty-state">Não há pedidos prontos para coleta neste momento.</p>}</section>
       </div>}
-      <a className="auth-subtle-link courier-back-link" href={masterPreview ? `/app/${encodeURIComponent(portal.slug)}` : '/app'}>Acessar ambiente da loja</a>
     </section>
     {activeOrder && <div className="courier-confirm-backdrop" onClick={() => { if (!busyOrderId) setActiveOrder(null) }}>
       <form className="courier-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="courier-confirm-title" onSubmit={(event) => void completeOrder(event)} onClick={(event) => event.stopPropagation()}>
         <header><div><p className="eyebrow">BAIXA DA ROTA</p><h2 id="courier-confirm-title">Concluir pedido #{activeOrder.order_number}</h2></div><button type="button" className="icon-button" aria-label="Fechar confirmação" disabled={Boolean(busyOrderId)} onClick={() => setActiveOrder(null)}><X size={18} /></button></header>
         <p className="courier-confirm-address">{courierAddressLabel(activeOrder.delivery_address)}</p>
+        {!(masterPreview && activeOrder.id === COURIER_DEMO_ORDER_ID) && <label className="courier-confirm-pin">PIN de 4 dígitos informado pelo cliente<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{4}" maxLength={4} value={deliveryPin} onChange={(event) => setDeliveryPin(event.target.value.replace(/\D/g, '').slice(0, 4))} /></label>}
         {activeOrder.payment_status === 'paid' ? <p className="courier-paid-note">Pagamento já confirmado pelo Asaas. Não registre nova cobrança na entrega.</p> : <div className="courier-collection-fields"><label>Valor recebido na entrega (total: {money(Number(activeOrder.total))})<input inputMode="decimal" value={amountReceived} onChange={(event) => setAmountReceived(event.target.value)} placeholder="0,00" /></label>{Number(amountReceived.replace(',', '.')) > 0 && <label>Forma de recebimento<select required value={collectionMethod} onChange={(event) => setCollectionMethod(event.target.value as typeof collectionMethod)}><option value="">Selecione…</option><option value="cash">Dinheiro</option><option value="card">Cartão</option><option value="pix">Pix</option></select></label>}<small>O status de pagamento do Asaas permanece inalterado; este valor fica registrado como recebimento na entrega.</small></div>}
         <label className="courier-note-field">Observação<textarea maxLength={1000} rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Ex.: entregue na recepção da oficina" /></label>
         <label className="courier-proof-field"><Camera size={16} /> Foto do comprovante (opcional)<input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => setProofFile(event.target.files?.[0] ?? null)} />{proofFile && <small>{proofFile.name}</small>}</label>
@@ -2316,7 +2605,7 @@ function CustomerAccountPage() {
             state: currentProfile.state,
           })
           const { data: orderRows, error: ordersError } = await client.from('orders')
-            .select('id, order_number, status, payment_status, payment_method, subtotal, shipping_amount, total, is_pickup, delivery_address, created_at, asaas_checkout_url')
+            .select('id, order_number, status, payment_status, payment_method, subtotal, shipping_amount, total, is_pickup, delivery_address, delivery_route_geometry, delivery_eta_seconds, created_at, asaas_checkout_url')
             .eq('customer_id', userData.user.id)
             .order('created_at', { ascending: false })
             .limit(50)
@@ -2336,6 +2625,10 @@ function CustomerAccountPage() {
             ? await client.rpc('get_customer_delivery_tracking', { p_order_ids: trackingOrderIds })
             : { data: [], error: null }
           if (trackingError) throw trackingError
+          const { data: pinRows, error: pinError } = orderIds.length
+            ? await client.rpc('get_my_order_confirmation_pins', { p_order_ids: orderIds })
+            : { data: [], error: null }
+          if (pinError) throw pinError
           if (!active) return
           const typedTrackingRows = (trackingRows ?? []) as {
             order_id: string
@@ -2350,9 +2643,12 @@ function CustomerAccountPage() {
             heading: typeof position.heading === 'number' ? position.heading : null,
             recorded_at: position.recorded_at,
           }])) as Record<string, LiveCourierPosition>
+          const orderPins = Object.fromEntries(((pinRows ?? []) as { order_id: string; pin_code: string }[])
+            .map((pin) => [pin.order_id, pin.pin_code])) as Record<string, string>
           setCourierPositions(positions)
           setOrders(rows.map((order) => ({
             ...order,
+            confirmation_pin: orderPins[order.id] ?? null,
             items: (itemRows ?? []).filter((item) => item.order_id === order.id),
             timeline: (timelineRows ?? []).filter((event) => event.order_id === order.id),
           })) as CustomerOrder[])
@@ -2386,9 +2682,27 @@ function CustomerAccountPage() {
         const statusChanged = previous.status !== changed.status
         const paymentChanged = previous.payment_status !== changed.payment_status
         if (!statusChanged && !paymentChanged) return
-        const updatedOrder = { ...previous, ...changed }
+        const updatedOrder = {
+          ...previous,
+          ...changed,
+          confirmation_pin: changed.status === 'delivered' || changed.status === 'cancelled'
+            ? null
+            : previous.confirmation_pin,
+        }
         ordersRef.current = ordersRef.current.map((order) => order.id === changed.id ? updatedOrder : order)
         setOrders(ordersRef.current)
+        if (changed.status === 'delivery' || changed.status === 'awaiting_pickup') {
+          void client.rpc('get_my_order_confirmation_pins', { p_order_ids: [changed.id] }).then(({ data, error: pinError }) => {
+            if (pinError) {
+              setError(`Pedido atualizado, mas não foi possível carregar o PIN: ${errorText(pinError)}`)
+              return
+            }
+            const pin = (data as { order_id: string; pin_code: string }[] | null)?.[0]
+            if (!pin) return
+            ordersRef.current = ordersRef.current.map((order) => order.id === changed.id ? { ...order, confirmation_pin: pin.pin_code } : order)
+            setOrders(ordersRef.current)
+          })
+        }
         const nextStatus = statusChanged && typeof changed.status === 'string' ? orderStatusLabel(changed.status) : 'Pagamento atualizado'
         const paymentMessage = paymentChanged && changed.payment_status === 'paid' ? 'Pagamento confirmado' : ''
         const message = `Pedido #${previous.order_number}: ${paymentMessage || nextStatus}.`
@@ -2653,7 +2967,8 @@ function CustomerAccountPage() {
             <div className="customer-order-heading"><div><b>Pedido #{order.order_number}</b><small>{new Date(order.created_at).toLocaleString('pt-BR')} · {order.is_pickup ? 'Retirada no balcão' : 'Entrega por motoboy'}</small></div><span className={`customer-order-status status-${order.payment_status}`}>{order.payment_status === 'paid' ? 'Pagamento confirmado' : order.payment_status === 'failed' ? 'Pagamento não concluído' : order.payment_status === 'refunded' ? 'Estornado' : 'Aguardando pagamento'}</span></div>
             <div className="customer-order-items">{order.items.map((item, index) => <span key={`${order.id}-${index}`}>{item.quantity}× {item.product_name} ({item.sku})</span>)}</div>
             {order.delivery_address && <small>{order.delivery_address.street}, {order.delivery_address.number} · CEP {order.delivery_address.postal_code}</small>}
-            {order.status === 'delivery' && !order.is_pickup && <section className="customer-live-tracking"><h3><Bike size={15} /> Localização do motoboy</h3>{courierPositions[order.id] ? <><RouteMap courierPosition={courierPositions[order.id]} /><small>Última atualização: {new Date(courierPositions[order.id].recorded_at).toLocaleTimeString('pt-BR')}</small></> : <p>Aguardando a primeira posição do motoboy…</p>}</section>}
+            {order.confirmation_pin && <div className="customer-delivery-pin"><span>PIN de confirmação</span><strong>{order.confirmation_pin}</strong><small>Informe ao entregador ou atendente somente ao receber o pedido.</small></div>}
+            {order.status === 'delivery' && !order.is_pickup && <section className="customer-live-tracking"><h3><Bike size={15} /> Rota e localização do motoboy</h3><RouteMap geometry={order.delivery_route_geometry ?? undefined} courierPosition={courierPositions[order.id]} />{order.delivery_eta_seconds !== null && <small>Previsão inicial da rota OpenStreet/OSRM: cerca de {Math.max(1, Math.round(order.delivery_eta_seconds / 60))} min</small>}{courierPositions[order.id] ? <small>Última atualização: {new Date(courierPositions[order.id].recorded_at).toLocaleTimeString('pt-BR')}</small> : <p>Aguardando a primeira posição do motoboy…</p>}</section>}
             <div className="customer-order-total"><span>{orderStatusLabel(order.status)}</span><b>Total {money(Number(order.total))}</b></div>
             <ol className={`customer-order-timeline${order.status === 'cancelled' ? ' is-cancelled' : ''}`} aria-label={`Acompanhamento do pedido ${order.order_number}`}>
               {(order.timeline.length ? order.timeline : [{ status: order.status, created_at: order.created_at }]).map((event, index) => <li key={`${order.id}-${event.status}-${event.created_at}-${index}`}>
